@@ -9,7 +9,7 @@ type TileInfo struct {
 	BBox      BBox
 }
 
-// GetTileInfoByXY returns the tile info for the given x, y and zoom level.
+// GetTileInfoByXY returns the tile version for the given x, y and zoom level.
 func (g *Grid) GetTileInfoByXY(x, y, zoomLevel int) (*TileInfo, error) {
 	if x < 0 || y < 0 || zoomLevel < 0 {
 		return nil, fmt.Errorf("invalid x, y or zoom level")

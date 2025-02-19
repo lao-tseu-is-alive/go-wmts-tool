@@ -2,6 +2,7 @@ package wmts
 
 import (
 	"fmt"
+	"github.com/lao-tseu-is-alive/go-wmts-tool/pkg/tools"
 	"math"
 )
 
@@ -16,6 +17,8 @@ type Grid struct {
 	topLeftX        float64 // top-left corner X in LV95 (EPSG:2056)
 	topLeftY        float64 // top-left corner Y in LV95 (EPSG:2056)
 	tileSize        float64 // Tile size in pixels
+	WmsBackendUrl   string
+	WmsStartParams  string
 
 	// resolutions is a map of zoom levels to their properties.
 	resolutions map[int]map[string]float64
@@ -167,4 +170,21 @@ func (g *Grid) GetMaxNumCols(zoomLevel int) float64 {
 	}
 	cellSize := zoomInfo["cellSize"]
 	return math.Round(g.GetWidth() / (g.tileSize * cellSize))
+}
+
+// GetTileImage returns the png image for a given tile.
+func (g *Grid) GetTileImage(zoomLevel, tileCol, tileRow int) string {
+
+	return fmt.Sprintf(g.TileURLTemplate, zoomLevel, tileRow, tileCol)
+}
+
+// GetTileWmsUrl returns the WMS URL for a given tile.
+func (g *Grid) GetTileWmsUrl(zoomLevel, tileCol, tileRow int, layers string, gutter int) (string, error) {
+	bbox, err := g.GetTileBBox(zoomLevel, tileCol, tileRow)
+	if err != nil {
+		return "", err
+	}
+	params := g.GetWMSParams(*bbox, layers, gutter, int(g.GetTileWidth()), int(g.GetTileHeight()), "png")
+	wmsURL := fmt.Sprintf("%s?%s%s", g.WmsBackendUrl, g.WmsStartParams, tools.BuildQueryString(params))
+	return wmsURL, nil
 }
