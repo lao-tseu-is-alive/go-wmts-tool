@@ -6,7 +6,7 @@ import (
 )
 
 // GetWMSParams generates a map of WMS parameters based on the provided inputs.
-func (g *Grid) GetWMSParams(bbox BBox, layers string, gutter int, width, height int, imageFormat string) map[string]string {
+func (g *Grid) GetWMSParams(bbox BBox, layers string, width, height int, imageFormat string) map[string]string {
 	if width <= 0 {
 		width = 256
 	}
@@ -17,10 +17,6 @@ func (g *Grid) GetWMSParams(bbox BBox, layers string, gutter int, width, height 
 		imageFormat = "png"
 	}
 
-	//Calculate the effective width and height including the gutter.
-	effectiveWidth := width + (gutter * 2)
-	effectiveHeight := height + (gutter * 2)
-
 	bboxStr := bbox.String()
 
 	params := map[string]string{
@@ -30,8 +26,8 @@ func (g *Grid) GetWMSParams(bbox BBox, layers string, gutter int, width, height 
 		"FORMAT":      fmt.Sprintf("image/%s", imageFormat),
 		"TRANSPARENT": strconv.FormatBool(imageFormat == "png"), // "true" if png, "false" otherwise
 		"LAYERS":      layers,
-		"WIDTH":       fmt.Sprintf("%d", effectiveWidth),
-		"HEIGHT":      fmt.Sprintf("%d", effectiveHeight),
+		"WIDTH":       fmt.Sprintf("%d", width),
+		"HEIGHT":      fmt.Sprintf("%d", height),
 		"CRS":         "EPSG:2056",
 		"STYLES":      "",
 		"BBOX":        bboxStr,

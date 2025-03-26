@@ -179,12 +179,12 @@ func (g *Grid) GetTileImage(zoomLevel, tileCol, tileRow int) string {
 }
 
 // GetTileWmsUrl returns the WMS URL for a given tile.
-func (g *Grid) GetTileWmsUrl(zoomLevel, tileCol, tileRow int, layers string, gutter int) (string, error) {
+func (g *Grid) GetTileWmsUrl(zoomLevel, tileCol, tileRow int, layers string) (string, error) {
 	bbox, err := g.GetTileBBox(zoomLevel, tileCol, tileRow)
 	if err != nil {
 		return "", err
 	}
-	params := g.GetWMSParams(*bbox, layers, gutter, int(g.GetTileWidth()), int(g.GetTileHeight()), "png")
+	params := g.GetWMSParams(*bbox, layers, int(g.GetTileWidth()), int(g.GetTileHeight()), "png")
 	wmsURL := fmt.Sprintf("%s?%s%s", g.WmsBackendUrl, g.WmsStartParams, tools.BuildQueryString(params))
 	return wmsURL, nil
 }

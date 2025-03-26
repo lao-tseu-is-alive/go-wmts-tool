@@ -6,22 +6,23 @@ import (
 	"fmt"
 	"github.com/lao-tseu-is-alive/go-wmts-tool/pkg/gohttp"
 	"github.com/lao-tseu-is-alive/go-wmts-tool/pkg/golog"
-	"github.com/lao-tseu-is-alive/go-wmts-tool/pkg/imgTools"
 	"github.com/lao-tseu-is-alive/go-wmts-tool/pkg/tools"
 	"github.com/lao-tseu-is-alive/go-wmts-tool/pkg/version"
 	"github.com/lao-tseu-is-alive/go-wmts-tool/pkg/wmts"
-	"image/png"
+	"io"
 	"io/fs"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 )
 
 const (
-	APP               = "goCloudK8sCommonDemoServer"
-	defaultPort       = 8000
-	defaultServerIp   = "0.0.0.0"
-	defaultWebRootDir = "front/dist/"
+	APP                 = "goCloudK8sCommonDemoServer"
+	defaultPort         = 8000
+	defaultServerIp     = "0.0.0.0"
+	defaultWebRootDir   = "front/dist/"
+	defaultWmtsBasePath = "tiles/"
 )
 
 type TileInfoResponse struct {
@@ -66,10 +67,6 @@ func getTileInfoByXYHandler(chGrid *wmts.Grid, l golog.MyLogger) http.HandlerFun
 		xStr := r.PathValue("x")
 		yStr := r.PathValue("y")
 
-		gutterStr := r.URL.Query().Get("gutter") // Get gutter as a string
-		// Set default value for gutter
-		gutter := 0
-
 		// 2. Convert parameters to the correct types, with error handling.
 		zoom, err := strconv.Atoi(zoomStr)
 		if err != nil {
@@ -86,13 +83,6 @@ func getTileInfoByXYHandler(chGrid *wmts.Grid, l golog.MyLogger) http.HandlerFun
 			http.Error(w, "Invalid y coordinate", http.StatusBadRequest)
 			return
 		}
-		if gutterStr != "" {
-			gutter, err = strconv.Atoi(gutterStr)
-			if err != nil {
-				http.Error(w, "Invalid gutter value", http.StatusBadRequest)
-				return
-			}
-		}
 
 		// 4. Perform calculations, handling potential errors from the lausanne wmts grid package.
 		col, row, err := chGrid.GetTile(x, y, zoom)
@@ -108,7 +98,7 @@ func getTileInfoByXYHandler(chGrid *wmts.Grid, l golog.MyLogger) http.HandlerFun
 		}
 		layers := "osm_bdcad_couleur_msgroup,planville_cs_autres_msgroup,planville_cs_bati_pol_sout,planville_marquage_msgroup,planville_od_objets_msgroup,planville_arbres_goeland_msgroup,planville_cs_bati_msgroup,planville_od_labels_msgroup"
 
-		params := chGrid.GetWMSParams(*bbox, layers, gutter, int(chGrid.GetTileWidth()), int(chGrid.GetTileHeight()), "png") // Use GetTileWidth
+		params := chGrid.GetWMSParams(*bbox, layers, int(chGrid.GetTileWidth()), int(chGrid.GetTileHeight()), "png") // Use GetTileWidth
 
 		// 5. Build the WMS URL.
 		wmsURL := fmt.Sprintf("%s?%s%s", chGrid.WmsBackendUrl, chGrid.WmsStartParams, tools.BuildQueryString(params))
@@ -135,9 +125,12 @@ func getTileInfoByXYHandler(chGrid *wmts.Grid, l golog.MyLogger) http.HandlerFun
 
 func getTileImageHandler(chGrid *wmts.Grid, l golog.MyLogger) http.HandlerFunc {
 	handlerName := "getTileImageHandler"
+	l.Debug("Initial call to %s", handlerName)
+	client := tools.CreateHTTPClient()
 	return func(w http.ResponseWriter, r *http.Request) {
 		gohttp.TraceRequest(handlerName, r, l)
 		// 1. Get parameters using r.PathValue().  MUCH cleaner!
+		layerStr := r.PathValue("layer")
 		zoomStr := r.PathValue("zoom")
 		colStr := r.PathValue("col")
 		rowStr := r.PathValue("row")
@@ -157,6 +150,11 @@ func getTileImageHandler(chGrid *wmts.Grid, l golog.MyLogger) http.HandlerFunc {
 			http.Error(w, "Invalid row", http.StatusBadRequest)
 			return
 		}
+		if layerStr != "fonds_geo_osm_bdcad_couleur" {
+			l.Error("invalid layer request")
+			http.Error(w, "Invalid layer", http.StatusBadRequest)
+			return
+		}
 		// 4. check if tile exists
 		if chGrid.IsValidTile(zoom, col, row) == false {
 			errMsg := fmt.Sprintf("invalid tile request for zoom:%d, col:%d, row:%d", zoom, col, row)
@@ -164,14 +162,43 @@ func getTileImageHandler(chGrid *wmts.Grid, l golog.MyLogger) http.HandlerFunc {
 			http.Error(w, errMsg, http.StatusBadRequest)
 			return
 		}
-		//chGrid.GetTileImage(zoom, col, row)
+
+		bbox, err := chGrid.GetTileBBox(zoom, col, row)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		layers := "osm_bdcad_couleur_msgroup,planville_cs_autres_msgroup,planville_cs_bati_pol_sout,planville_marquage_msgroup,planville_od_objets_msgroup,planville_arbres_goeland_msgroup,planville_cs_bati_msgroup,planville_od_labels_msgroup"
+		if layerStr != "fonds_geo_osm_bdcad_couleur" {
+			layers = "get_your_own_layers"
+		}
+
+		params := chGrid.GetWMSParams(*bbox, layers, int(chGrid.GetTileWidth()), int(chGrid.GetTileHeight()), "png") // Use GetTileWidth
+
+		// 5. Build the WMS URL.
+		wmsURL := fmt.Sprintf("%s?%s%s", chGrid.WmsBackendUrl, chGrid.WmsStartParams, tools.BuildQueryString(params))
+
+		imgPath := fmt.Sprintf("%s/%d/%d/%d.png", defaultWmtsBasePath, zoom, col, row)
+		err = tools.GetPngFromUrl(client, wmsURL, imgPath, 2)
+		if err != nil {
+			errMsg := fmt.Sprintf("error in GetPngFromUrl tile  zoom:%d, col:%d, row:%d", zoom, col, row)
+			l.Error(errMsg)
+			http.Error(w, errMsg, http.StatusInternalServerError)
+			return
+		}
+		// Open the image file
+		file, err := os.Open(imgPath)
+		if err != nil {
+			http.Error(w, "Failed to open image", http.StatusInternalServerError)
+			return
+		}
+		defer file.Close()
 		// return the correct content type header for the image
 		w.Header().Set("Content-Type", "image/png")
-		img, err := imgTools.GetPngImg(0, 0, 250, 100, 256, 256)
-		// Encode PNG to memory
-		err = png.Encode(w, img)
+
+		_, err = io.Copy(w, file)
 		if err != nil {
-			http.Error(w, "Error encoding PNG", http.StatusInternalServerError)
+			http.Error(w, "Error reading png img", http.StatusInternalServerError)
 			return
 		}
 	}
@@ -193,7 +220,7 @@ func main() {
 		l)
 	mux := server.GetRouter()
 	mux.Handle("GET /getTileByXY/{zoom}/{x}/{y}", gohttp.CorsMiddleware(getTileInfoByXYHandler(myGrid, l)))
-	mux.Handle("GET /tile/{zoom}/{row}/{col}", gohttp.CorsMiddleware(getTileImageHandler(myGrid, l)))
+	mux.Handle("GET /tile/{layer}/{zoom}/{row}/{col}", gohttp.CorsMiddleware(getTileImageHandler(myGrid, l)))
 	mux.Handle("GET /*", GetMyDefaultHandler(server, defaultWebRootDir, content))
 	server.StartServer()
 }
