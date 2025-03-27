@@ -26,3 +26,5 @@ go.work.sum
 
 .idea/
 /scratch/
+/imbach/config_tiles_cimbach.yaml
+/imbach/WMTSCapabilities.xml
