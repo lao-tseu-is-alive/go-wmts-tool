@@ -22,7 +22,7 @@ const (
 	defaultPort                = 8000
 	defaultServerIp            = "0.0.0.0"
 	defaultWebRootDir          = "front/dist/"
-	defaultWmtsBasePath        = "tiles"
+	defaultWmtsBasePath        = "tiles/1.0.0"
 	defaultWmtsLayer           = "fonds_geo_osm_bdcad_couleur"
 	defaultMaxClientTimeOutSec = 10
 	defaultMaxIdleConn         = 100
@@ -183,7 +183,7 @@ func getTileImageHandler(chGrid *wmts.Grid, l golog.MyLogger) http.HandlerFunc {
 		// 5. Build the WMS URL.
 		wmsURL := fmt.Sprintf("%s?%s%s", chGrid.WmsBackendUrl, chGrid.WmsStartParams, tools.BuildQueryString(params))
 
-		imgPath := fmt.Sprintf("%s/%s/%d/%d/%d.png", defaultWmtsBasePath, layerStr, zoom, col, row)
+		imgPath := fmt.Sprintf("%s/%s/%d/%d/%d.png", defaultWmtsBasePath, layerStr, zoom, row, col)
 		// check if tile is in cache
 		_, err = os.Stat(imgPath)
 		if err != nil {
@@ -233,7 +233,7 @@ func main() {
 		l)
 	mux := server.GetRouter()
 	mux.Handle("GET /getTileByXY/{zoom}/{x}/{y}", gohttp.CorsMiddleware(getTileInfoByXYHandler(myGrid, l)))
-	mux.Handle("GET /tile/{layer}/{zoom}/{row}/{col}", gohttp.CorsMiddleware(getTileImageHandler(myGrid, l)))
+	mux.Handle("GET /tiles/1.0.0/{layer}/{zoom}/{row}/{col}", gohttp.CorsMiddleware(getTileImageHandler(myGrid, l)))
 	mux.Handle("GET /*", GetMyDefaultHandler(server, defaultWebRootDir, content))
 	server.StartServer()
 }
