@@ -22,7 +22,7 @@ const (
 	defaultPort                = 8000
 	defaultServerIp            = "0.0.0.0"
 	defaultWebRootDir          = "front/dist/"
-	defaultWmtsBasePath        = "tiles/"
+	defaultWmtsBasePath        = "tiles"
 	defaultWmtsLayer           = "fonds_geo_osm_bdcad_couleur"
 	defaultMaxClientTimeOutSec = 10
 	defaultMaxIdleConn         = 100
@@ -183,18 +183,26 @@ func getTileImageHandler(chGrid *wmts.Grid, l golog.MyLogger) http.HandlerFunc {
 		// 5. Build the WMS URL.
 		wmsURL := fmt.Sprintf("%s?%s%s", chGrid.WmsBackendUrl, chGrid.WmsStartParams, tools.BuildQueryString(params))
 
-		imgPath := fmt.Sprintf("%s/%d/%d/%d.png", defaultWmtsBasePath, zoom, col, row)
-		err = tools.GetPngFromUrl(client, wmsURL, imgPath, 2)
+		imgPath := fmt.Sprintf("%s/%s/%d/%d/%d.png", defaultWmtsBasePath, layerStr, zoom, col, row)
+		// check if tile is in cache
+		_, err = os.Stat(imgPath)
 		if err != nil {
-			errMsg := fmt.Sprintf("error in GetPngFromUrl tile  zoom:%d, col:%d, row:%d", zoom, col, row)
-			l.Error(errMsg)
-			http.Error(w, errMsg, http.StatusInternalServerError)
-			return
+			l.Debug("file %s is not in cache, downloading: %s", imgPath, wmsURL)
+			err = tools.GetPngFromUrl(client, wmsURL, imgPath, 2)
+			if err != nil {
+				errMsg := fmt.Sprintf("error in GetPngFromUrl tile  zoom:%d, col:%d, row:%d", zoom, col, row)
+				l.Error(errMsg)
+				http.Error(w, errMsg, http.StatusInternalServerError)
+				return
+			}
 		}
 		// Open the image file
+		l.Debug("reading local tile %s", imgPath)
 		file, err := os.Open(imgPath)
 		if err != nil {
-			http.Error(w, "Failed to open image", http.StatusInternalServerError)
+			errMsg := fmt.Sprintf("error doing os.Open(imgPath:%s)", imgPath)
+			l.Error(errMsg)
+			http.Error(w, errMsg, http.StatusInternalServerError)
 			return
 		}
 		defer file.Close()
