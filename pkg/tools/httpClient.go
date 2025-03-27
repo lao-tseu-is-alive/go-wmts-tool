@@ -10,13 +10,13 @@ import (
 )
 
 // CreateHTTPClient creates a configured HTTP client with timeouts
-func CreateHTTPClient() *http.Client {
+func CreateHTTPClient(maxTimeout, maxIdleConn, maxIdleConnPerHost, idleConnTimeout int) *http.Client {
 	return &http.Client{
-		Timeout: 30 * time.Second,
+		Timeout: time.Duration(maxTimeout) * time.Second,
 		Transport: &http.Transport{
-			MaxIdleConns:        100,
-			MaxIdleConnsPerHost: 100,
-			IdleConnTimeout:     90 * time.Second,
+			MaxIdleConns:        maxIdleConn,
+			MaxIdleConnsPerHost: maxIdleConnPerHost,
+			IdleConnTimeout:     time.Duration(idleConnTimeout) * time.Second,
 		},
 	}
 }

@@ -18,11 +18,16 @@ import (
 )
 
 const (
-	APP                 = "goCloudK8sCommonDemoServer"
-	defaultPort         = 8000
-	defaultServerIp     = "0.0.0.0"
-	defaultWebRootDir   = "front/dist/"
-	defaultWmtsBasePath = "tiles/"
+	APP                        = "goCloudK8sCommonDemoServer"
+	defaultPort                = 8000
+	defaultServerIp            = "0.0.0.0"
+	defaultWebRootDir          = "front/dist/"
+	defaultWmtsBasePath        = "tiles/"
+	defaultWmtsLayer           = "fonds_geo_osm_bdcad_couleur"
+	defaultMaxClientTimeOutSec = 10
+	defaultMaxIdleConn         = 100
+	defaultMaxIdleConnPerHost  = 100
+	defaultIdleConnTimeoutSec  = 90
 )
 
 type TileInfoResponse struct {
@@ -126,7 +131,7 @@ func getTileInfoByXYHandler(chGrid *wmts.Grid, l golog.MyLogger) http.HandlerFun
 func getTileImageHandler(chGrid *wmts.Grid, l golog.MyLogger) http.HandlerFunc {
 	handlerName := "getTileImageHandler"
 	l.Debug("Initial call to %s", handlerName)
-	client := tools.CreateHTTPClient()
+	client := tools.CreateHTTPClient(defaultMaxClientTimeOutSec, defaultMaxIdleConn, defaultMaxIdleConnPerHost, defaultIdleConnTimeoutSec)
 	return func(w http.ResponseWriter, r *http.Request) {
 		gohttp.TraceRequest(handlerName, r, l)
 		// 1. Get parameters using r.PathValue().  MUCH cleaner!
@@ -150,7 +155,7 @@ func getTileImageHandler(chGrid *wmts.Grid, l golog.MyLogger) http.HandlerFunc {
 			http.Error(w, "Invalid row", http.StatusBadRequest)
 			return
 		}
-		if layerStr != "fonds_geo_osm_bdcad_couleur" {
+		if layerStr != defaultWmtsLayer {
 			l.Error("invalid layer request")
 			http.Error(w, "Invalid layer", http.StatusBadRequest)
 			return
@@ -169,7 +174,7 @@ func getTileImageHandler(chGrid *wmts.Grid, l golog.MyLogger) http.HandlerFunc {
 			return
 		}
 		layers := "osm_bdcad_couleur_msgroup,planville_cs_autres_msgroup,planville_cs_bati_pol_sout,planville_marquage_msgroup,planville_od_objets_msgroup,planville_arbres_goeland_msgroup,planville_cs_bati_msgroup,planville_od_labels_msgroup"
-		if layerStr != "fonds_geo_osm_bdcad_couleur" {
+		if layerStr != defaultWmtsLayer {
 			layers = "get_your_own_layers"
 		}
 
