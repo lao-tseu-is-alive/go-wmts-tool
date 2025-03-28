@@ -28,3 +28,4 @@ go.work.sum
 /scratch/
 /imbach/config_tiles_cimbach.yaml
 /imbach/WMTSCapabilities.xml
+/tiles/
