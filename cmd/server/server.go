@@ -18,11 +18,13 @@ import (
 )
 
 const (
-	APP                        = "goCloudK8sCommonDemoServer"
 	defaultPort                = 8000
 	defaultServerIp            = "0.0.0.0"
 	defaultWebRootDir          = "front/dist/"
-	defaultWmtsBasePath        = "tiles/1.0.0"
+	defaultWmtsUrlPrefix       = "tiles/1.0.0"
+	defaultWmtsUrlStyle        = "default"
+	defaultWmtsUrlYear         = "2021"
+	defaultWmtsMatrixSet       = "swissgrid_05"
 	defaultWmtsLayer           = "fonds_geo_osm_bdcad_couleur"
 	defaultMaxClientTimeOutSec = 10
 	defaultMaxIdleConn         = 100
@@ -183,7 +185,9 @@ func getTileImageHandler(chGrid *wmts.Grid, l golog.MyLogger) http.HandlerFunc {
 		// 5. Build the WMS URL.
 		wmsURL := fmt.Sprintf("%s?%s%s", chGrid.WmsBackendUrl, chGrid.WmsStartParams, tools.BuildQueryString(params))
 
-		imgPath := fmt.Sprintf("%s/%s/%d/%d/%d.png", defaultWmtsBasePath, layerStr, zoom, row, col)
+		prefix := defaultWmtsUrlPrefix
+		style := defaultWmtsUrlStyle
+		imgPath := wmts.GetWmtsImgPath(prefix, layerStr, style, defaultWmtsUrlYear, defaultWmtsMatrixSet, "png", zoom, row, col)
 		// check if tile is in cache
 		_, err = os.Stat(imgPath)
 		if err != nil {
@@ -206,9 +210,18 @@ func getTileImageHandler(chGrid *wmts.Grid, l golog.MyLogger) http.HandlerFunc {
 			return
 		}
 		defer file.Close()
+		// get the size of the file to add content-length header
+		fileInfo, err := file.Stat()
+		if err != nil {
+			errMsg := fmt.Sprintf("error %v, doing file.Stat : %s", err, imgPath)
+			l.Error(errMsg)
+			http.Error(w, errMsg, http.StatusInternalServerError)
+			return
+		}
 		// return the correct content type header for the image
 		w.Header().Set("Content-Type", "image/png")
-
+		w.Header().Set("Content-Length", strconv.FormatInt(fileInfo.Size(), 10))
+		// write the img to the response
 		_, err = io.Copy(w, file)
 		if err != nil {
 			http.Error(w, "Error reading png img", http.StatusInternalServerError)
@@ -218,14 +231,14 @@ func getTileImageHandler(chGrid *wmts.Grid, l golog.MyLogger) http.HandlerFunc {
 }
 
 func main() {
-	l, err := golog.NewLogger("zap", golog.DebugLevel, APP)
+	l, err := golog.NewLogger("zap", golog.DebugLevel, version.APP)
 	if err != nil {
 		log.Fatalf("💥💥 error golog.NewLogger error: %v'\n", err)
 	}
-	l.Info("🚀🚀 Starting App:'%s', ver:%s, build:%s, from: %s", APP, version.VERSION, version.Build, version.REPOSITORY)
+	l.Info("🚀🚀 Starting App:'%s', ver:%s, build:%s, from: %s", version.APP, version.VERSION, version.Build, version.REPOSITORY)
 	// Create a new grid
 	myGrid := wmts.CreateNewLausanneGridFromEnvOrFail()
-	myVersionReader := gohttp.NewSimpleVersionReader(APP, version.VERSION, version.REPOSITORY, version.Build)
+	myVersionReader := gohttp.NewSimpleVersionReader(version.APP, version.VERSION, version.REPOSITORY, version.Build)
 	server := gohttp.CreateNewServerFromEnvOrFail(
 		defaultPort,
 		defaultServerIp,
@@ -233,7 +246,9 @@ func main() {
 		l)
 	mux := server.GetRouter()
 	mux.Handle("GET /getTileByXY/{zoom}/{x}/{y}", gohttp.CorsMiddleware(getTileInfoByXYHandler(myGrid, l)))
-	mux.Handle("GET /tiles/1.0.0/{layer}/{zoom}/{row}/{col}", gohttp.CorsMiddleware(getTileImageHandler(myGrid, l)))
+	wmtsUrlTemplate := fmt.Sprintf("/%s/{layer}/%s/{year}/{matrixSet}/{zoom}/{row}/{col}", defaultWmtsUrlPrefix, defaultWmtsUrlStyle)
+	l.Info("tiles url template: %s", wmtsUrlTemplate)
+	mux.Handle(fmt.Sprintf("GET %s", wmtsUrlTemplate), gohttp.CorsMiddleware(getTileImageHandler(myGrid, l)))
 	mux.Handle("GET /*", GetMyDefaultHandler(server, defaultWebRootDir, content))
 	server.StartServer()
 }
