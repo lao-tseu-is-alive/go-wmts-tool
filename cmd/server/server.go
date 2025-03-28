@@ -25,7 +25,6 @@ const (
 	defaultWmtsUrlStyle        = "default"
 	defaultWmtsUrlYear         = "2021"
 	defaultWmtsMatrixSet       = "swissgrid_05"
-	defaultWmtsLayer           = "fonds_geo_osm_bdcad_couleur"
 	defaultMaxClientTimeOutSec = 10
 	defaultMaxIdleConn         = 100
 	defaultMaxIdleConnPerHost  = 100
@@ -64,12 +63,13 @@ func GetMyDefaultHandler(s *gohttp.Server, webRootDir string, content embed.FS) 
 	}
 }
 
-func getTileInfoByXYHandler(chGrid *wmts.Grid, l golog.MyLogger) http.HandlerFunc {
+func getTileInfoByXYHandler(chGrid *wmts.Grid, layers map[string]wmts.LayerConfig, l golog.MyLogger) http.HandlerFunc {
 	handlerName := "getTileInfoByXYHandler"
 	l.Debug("Initial call to %s", handlerName)
 	return func(w http.ResponseWriter, r *http.Request) {
 		gohttp.TraceRequest(handlerName, r, l)
 		// 1. Get parameters using r.PathValue().  MUCH cleaner!
+		layerStr := r.PathValue("layer")
 		zoomStr := r.PathValue("zoom")
 		xStr := r.PathValue("x")
 		yStr := r.PathValue("y")
@@ -91,6 +91,14 @@ func getTileInfoByXYHandler(chGrid *wmts.Grid, l golog.MyLogger) http.HandlerFun
 			return
 		}
 
+		// Look up layer config
+		layerConfig, exists := layers[layerStr]
+		if !exists {
+			l.Error("invalid layer request: %s", layerStr)
+			http.Error(w, "Invalid layer", http.StatusBadRequest)
+			return
+		}
+
 		// 4. Perform calculations, handling potential errors from the lausanne wmts grid package.
 		col, row, err := chGrid.GetTile(x, y, zoom)
 		if err != nil {
@@ -103,7 +111,7 @@ func getTileInfoByXYHandler(chGrid *wmts.Grid, l golog.MyLogger) http.HandlerFun
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		layers := "osm_bdcad_couleur_msgroup,planville_cs_autres_msgroup,planville_cs_bati_pol_sout,planville_marquage_msgroup,planville_od_objets_msgroup,planville_arbres_goeland_msgroup,planville_cs_bati_msgroup,planville_od_labels_msgroup"
+		layers := layerConfig.WMSLayers
 
 		params := chGrid.GetWMSParams(*bbox, layers, int(chGrid.GetTileWidth()), int(chGrid.GetTileHeight()), "png") // Use GetTileWidth
 
@@ -130,7 +138,7 @@ func getTileInfoByXYHandler(chGrid *wmts.Grid, l golog.MyLogger) http.HandlerFun
 	}
 }
 
-func getTileImageHandler(chGrid *wmts.Grid, l golog.MyLogger) http.HandlerFunc {
+func getTileImageHandler(chGrid *wmts.Grid, layers map[string]wmts.LayerConfig, l golog.MyLogger) http.HandlerFunc {
 	handlerName := "getTileImageHandler"
 	l.Debug("Initial call to %s", handlerName)
 	client := tools.CreateHTTPClient(defaultMaxClientTimeOutSec, defaultMaxIdleConn, defaultMaxIdleConnPerHost, defaultIdleConnTimeoutSec)
@@ -157,11 +165,14 @@ func getTileImageHandler(chGrid *wmts.Grid, l golog.MyLogger) http.HandlerFunc {
 			http.Error(w, "Invalid row", http.StatusBadRequest)
 			return
 		}
-		if layerStr != defaultWmtsLayer {
-			l.Error("invalid layer request")
+		// Look up layer config
+		layerConfig, exists := layers[layerStr]
+		if !exists {
+			l.Error("invalid layer request: %s", layerStr)
 			http.Error(w, "Invalid layer", http.StatusBadRequest)
 			return
 		}
+
 		// 4. check if tile exists
 		if chGrid.IsValidTile(zoom, col, row) == false {
 			errMsg := fmt.Sprintf("invalid tile request for zoom:%d, col:%d, row:%d", zoom, col, row)
@@ -175,11 +186,7 @@ func getTileImageHandler(chGrid *wmts.Grid, l golog.MyLogger) http.HandlerFunc {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		layers := "osm_bdcad_couleur_msgroup,planville_cs_autres_msgroup,planville_cs_bati_pol_sout,planville_marquage_msgroup,planville_od_objets_msgroup,planville_arbres_goeland_msgroup,planville_cs_bati_msgroup,planville_od_labels_msgroup"
-		if layerStr != defaultWmtsLayer {
-			layers = "get_your_own_layers"
-		}
-
+		layers := layerConfig.WMSLayers
 		params := chGrid.GetWMSParams(*bbox, layers, int(chGrid.GetTileWidth()), int(chGrid.GetTileHeight()), "png") // Use GetTileWidth
 
 		// 5. Build the WMS URL.
@@ -238,6 +245,23 @@ func main() {
 	l.Info("🚀🚀 Starting App:'%s', ver:%s, build:%s, from: %s", version.APP, version.VERSION, version.Build, version.REPOSITORY)
 	// Create a new grid
 	myGrid := wmts.CreateNewLausanneGridFromEnvOrFail()
+
+	configPath := "config.yaml"
+	layers, err := wmts.LoadLayerConfigFromYAML(configPath)
+	if err != nil {
+		l.Fatal("error loading %s layer config: %v", configPath, err)
+	}
+	// Print loaded layers for info
+	for name, layer := range layers {
+		l.Debug("Layer: %s\n", name)
+		l.Debug("  Title: %s\n", layer.Title)
+		l.Debug("  WMS Backend URL: %s\n", layer.WMSBackendURL)
+		l.Debug("  WMS Layers: %s\n", layer.WMSLayers)
+		l.Debug("  BBox: %v\n", layer.BBox)
+		l.Debug("  WMTS URL Prefix: %s\n", layer.WMTSURLPrefix)
+		l.Debug("  Image MIME Type: %s\n\n", layer.ImageMIMEType)
+	}
+
 	myVersionReader := gohttp.NewSimpleVersionReader(version.APP, version.VERSION, version.REPOSITORY, version.Build)
 	server := gohttp.CreateNewServerFromEnvOrFail(
 		defaultPort,
@@ -245,10 +269,11 @@ func main() {
 		myVersionReader,
 		l)
 	mux := server.GetRouter()
-	mux.Handle("GET /getTileByXY/{zoom}/{x}/{y}", gohttp.CorsMiddleware(getTileInfoByXYHandler(myGrid, l)))
+	mux.Handle("GET /getTileByXY/{layer}/{zoom}/{x}/{y}", gohttp.CorsMiddleware(getTileInfoByXYHandler(myGrid, layers, l)))
 	wmtsUrlTemplate := fmt.Sprintf("/%s/{layer}/%s/{year}/{matrixSet}/{zoom}/{row}/{col}", defaultWmtsUrlPrefix, defaultWmtsUrlStyle)
 	l.Info("tiles url template: %s", wmtsUrlTemplate)
-	mux.Handle(fmt.Sprintf("GET %s", wmtsUrlTemplate), gohttp.CorsMiddleware(getTileImageHandler(myGrid, l)))
+	// wmtsUrlTemplate := "/tiles/1.0.0/{layer}/default/{year}/{matrixSet}/{zoom}/{row}/{col}"
+	mux.Handle(fmt.Sprintf("GET %s", wmtsUrlTemplate), gohttp.CorsMiddleware(getTileImageHandler(myGrid, layers, l)))
 	mux.Handle("GET /*", GetMyDefaultHandler(server, defaultWebRootDir, content))
 	server.StartServer()
 }
