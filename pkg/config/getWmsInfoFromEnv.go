@@ -24,3 +24,13 @@ func GetWmsBackendPrefixFromEnvOrPanic() string {
 	}
 	return fmt.Sprintf("%s", val)
 }
+
+// GetLayersConfigPathFromEnvOrPanic returns a string to be used with WMS based on the content of the env variable
+// LAYERS_CONFIG_PATH : should exist and contain a string with your WMS backend prefix or this function
+func GetLayersConfigPathFromEnvOrPanic() string {
+	val, exist := os.LookupEnv("LAYERS_CONFIG_PATH")
+	if !exist {
+		panic("💥💥 ERROR: ENV LAYERS_CONFIG_PATH should contain your WMS layers configuration.")
+	}
+	return fmt.Sprintf("%s", val)
+}

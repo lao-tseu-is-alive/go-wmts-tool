@@ -1,9 +1,5 @@
 package wmts
 
-import (
-	"github.com/lao-tseu-is-alive/go-wmts-tool/pkg/config"
-)
-
 // NewLausanneGrid creates and initializes a new WMTS Grid instance for Lausanne in Switzerland.
 func NewLausanneGrid(wmsBackEndUrl, wmsStartParams string) *Grid {
 	g := &Grid{
@@ -39,9 +35,7 @@ func NewLausanneGrid(wmsBackEndUrl, wmsStartParams string) *Grid {
 	return g
 }
 
-func CreateNewLausanneGridFromEnvOrFail() *Grid {
-	wmsBackEndUrl := config.GetWmsBackendUrlFromEnvOrPanic()
-	wmsStartParams := config.GetWmsBackendPrefixFromEnvOrPanic()
+func CreateNewLausanneGridFromEnvOrFail(wmsBackEndUrl, wmsStartParams string) *Grid {
 	return NewLausanneGrid(wmsBackEndUrl, wmsStartParams)
 
 }

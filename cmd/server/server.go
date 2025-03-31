@@ -4,6 +4,7 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
+	"github.com/lao-tseu-is-alive/go-wmts-tool/pkg/config"
 	"github.com/lao-tseu-is-alive/go-wmts-tool/pkg/gohttp"
 	"github.com/lao-tseu-is-alive/go-wmts-tool/pkg/golog"
 	"github.com/lao-tseu-is-alive/go-wmts-tool/pkg/tools"
@@ -238,21 +239,25 @@ func getTileImageHandler(chGrid *wmts.Grid, layers map[string]wmts.LayerConfig, 
 }
 
 func main() {
-	l, err := golog.NewLogger("zap", golog.DebugLevel, version.APP)
+	l, err := golog.NewLogger("zap", golog.InfoLevel, version.APP)
 	if err != nil {
 		log.Fatalf("💥💥 error golog.NewLogger error: %v'\n", err)
 	}
 	l.Info("🚀🚀 Starting App:'%s', ver:%s, build:%s, from: %s", version.APP, version.VERSION, version.Build, version.REPOSITORY)
-	// Create a new grid
-	myGrid := wmts.CreateNewLausanneGridFromEnvOrFail()
 
-	configPath := "config.yaml"
+	configPath := config.GetLayersConfigPathFromEnvOrPanic()
 	layers, err := wmts.LoadLayerConfigFromYAML(configPath)
 	if err != nil {
 		l.Fatal("error loading %s layer config: %v", configPath, err)
 	}
+	// Check if there are layers loaded
+	if len(layers) == 0 {
+		l.Fatal("no layers loaded from %s", configPath)
+	}
 	// Print loaded layers for info
+	firstLayer := ""
 	for name, layer := range layers {
+		firstLayer = name
 		l.Debug("Layer: %s\n", name)
 		l.Debug("  Title: %s\n", layer.Title)
 		l.Debug("  WMS Backend URL: %s\n", layer.WMSBackendURL)
@@ -261,6 +266,12 @@ func main() {
 		l.Debug("  WMTS URL Prefix: %s\n", layer.WMTSURLPrefix)
 		l.Debug("  Image MIME Type: %s\n\n", layer.ImageMIMEType)
 	}
+
+	wmsBackEndUrl := layers[firstLayer].WMSBackendURL
+	wmsStartParams := layers[firstLayer].WMSBackendPrefix
+
+	// Create a new grid
+	myGrid := wmts.CreateNewLausanneGridFromEnvOrFail(wmsBackEndUrl, wmsStartParams)
 
 	myVersionReader := gohttp.NewSimpleVersionReader(version.APP, version.VERSION, version.REPOSITORY, version.Build)
 	server := gohttp.CreateNewServerFromEnvOrFail(
@@ -271,7 +282,7 @@ func main() {
 	mux := server.GetRouter()
 	mux.Handle("GET /getTileByXY/{layer}/{zoom}/{x}/{y}", gohttp.CorsMiddleware(getTileInfoByXYHandler(myGrid, layers, l)))
 	wmtsUrlTemplate := fmt.Sprintf("/%s/{layer}/%s/{year}/{matrixSet}/{zoom}/{row}/{col}", defaultWmtsUrlPrefix, defaultWmtsUrlStyle)
-	l.Info("tiles url template: %s", wmtsUrlTemplate)
+	l.Debug("tiles url template: %s", wmtsUrlTemplate)
 	// wmtsUrlTemplate := "/tiles/1.0.0/{layer}/default/{year}/{matrixSet}/{zoom}/{row}/{col}"
 	mux.Handle(fmt.Sprintf("GET %s", wmtsUrlTemplate), gohttp.CorsMiddleware(getTileImageHandler(myGrid, layers, l)))
 	mux.Handle("GET /*", GetMyDefaultHandler(server, defaultWebRootDir, content))
