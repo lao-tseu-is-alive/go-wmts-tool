@@ -66,8 +66,6 @@ func CreateNewServerFromEnvOrFail(
 ) *Server {
 	listenPort := config.GetPortFromEnvOrPanic(defaultPort)
 	listenAddr := fmt.Sprintf("%s:%d", defaultServerIp, listenPort)
-	l.Info("HTTP server will listen : %s", listenAddr)
-
 	server := NewGoHttpServer(listenAddr, myVersionReader, l)
 	return server
 

@@ -54,7 +54,11 @@ func GetMyDefaultHandler(s *gohttp.Server, webRootDir string, content embed.FS) 
 	if err != nil {
 		logger.Fatal("Error creating sub-filesystem: %v", err)
 	}
-
+	// Debug: List embedded files
+	files, _ := fs.ReadDir(subFS, ".")
+	for _, file := range files {
+		logger.Debug("Embedded file: %s", file.Name())
+	}
 	// Create a file server handler for the embed filesystem
 	handler := http.FileServer(http.FS(subFS))
 
@@ -239,7 +243,7 @@ func getTileImageHandler(chGrid *wmts.Grid, layers map[string]wmts.LayerConfig, 
 }
 
 func main() {
-	l, err := golog.NewLogger("zap", golog.InfoLevel, version.APP)
+	l, err := golog.NewLogger("zap", golog.DebugLevel, version.APP)
 	if err != nil {
 		log.Fatalf("💥💥 error golog.NewLogger error: %v'\n", err)
 	}
@@ -285,6 +289,6 @@ func main() {
 	l.Debug("tiles url template: %s", wmtsUrlTemplate)
 	// wmtsUrlTemplate := "/tiles/1.0.0/{layer}/default/{year}/{matrixSet}/{zoom}/{row}/{col}"
 	mux.Handle(fmt.Sprintf("GET %s", wmtsUrlTemplate), gohttp.CorsMiddleware(getTileImageHandler(myGrid, layers, l)))
-	mux.Handle("GET /*", GetMyDefaultHandler(server, defaultWebRootDir, content))
+	mux.HandleFunc("GET /", GetMyDefaultHandler(server, defaultWebRootDir, content))
 	server.StartServer()
 }

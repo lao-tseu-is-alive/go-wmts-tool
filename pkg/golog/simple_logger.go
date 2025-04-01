@@ -37,7 +37,7 @@ type SimpleLogger struct {
 }
 
 func NewSimpleLogger(logLevel Level, prefix string) (MyLogger, error) {
-	l := log.New(os.Stdout, prefix, log.Ldate|log.Ltime|log.Lshortfile)
+	l := log.New(os.Stdout, prefix, log.Ldate|log.Ltime|log.Llongfile)
 	return &SimpleLogger{logger: l, maxLevel: logLevel}, nil
 }
 
