@@ -1,8 +1,9 @@
 {
-  "name": "wmtsProxyFront",
+  "name": "wmts-proxy-front",
+  "url": "https://github.com/lao-tseu-is-alive/go-wmts-tool",
   "private": true,
   "type": "module",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "scripts": {
     "dev": "vite",
     "build": "run-p type-check \"build-only {@}\" --",
@@ -12,13 +13,20 @@
   },
   "dependencies": {
     "@mdi/font": "7.4.47",
+    "axios": "^1.8.4",
+    "cgil-html-utils": "^2.0.4",
+    "ol": "^10.5.0",
+    "ol-layerswitcher": "^4.1.2",
+    "ol-map-lausanne": "^0.0.11",
+    "proj4": "^2.15.0",
     "roboto-fontface": "*",
     "vue": "^3.4.31",
     "vuetify": "^3.6.14"
   },
   "devDependencies": {
     "@tsconfig/node22": "^22.0.0",
-    "@types/node": "^22.9.0",
+    "@types/node": "^22.13.16",
+    "@types/proj4": "^2.5.6",
     "@vitejs/plugin-vue": "^5.1.4",
     "@vue/eslint-config-typescript": "^14.1.3",
     "@vue/tsconfig": "^0.5.1",
@@ -27,7 +35,6 @@
     "sass-embedded": "^1.77.8",
     "typescript": "~5.6.3",
     "unplugin-fonts": "^1.1.1",
-    "unplugin-vue-components": "^0.27.2",
     "vite": "^5.4.10",
     "vite-plugin-vuetify": "^2.0.3",
     "vue-tsc": "^2.1.10"
