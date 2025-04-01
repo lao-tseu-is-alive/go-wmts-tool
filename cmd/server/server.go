@@ -21,7 +21,7 @@ import (
 const (
 	defaultPort                = 8000
 	defaultServerIp            = "0.0.0.0"
-	defaultWebRootDir          = "front/dist/"
+	defaultWebRootDir          = "wmtsProxyFront/dist/"
 	defaultWmtsUrlPrefix       = "tiles/1.0.0"
 	defaultWmtsUrlStyle        = "default"
 	defaultWmtsUrlYear         = "2021"
@@ -42,23 +42,26 @@ type TileInfoResponse struct {
 
 // content holds our static web server content.
 //
-//go:embed all:front/dist
+//go:embed all:wmtsProxyFront/dist
 var content embed.FS
 
 func GetMyDefaultHandler(s *gohttp.Server, webRootDir string, content embed.FS) http.HandlerFunc {
 	handlerName := "GetMyDefaultHandler"
 	logger := s.GetLog()
 	logger.Debug("Initial call to %s with webRootDir:%s", handlerName, webRootDir)
-	// Create a subfolder filesystem to serve only the content of front/dist
-	subFS, err := fs.Sub(content, "front/dist")
+	// Create a subfolder filesystem to serve only the content of wmtsProxyFront/dist
+	//subFS, err := fs.Sub(content, fmt.Sprintf("%s", defaultWebRootDir))
+	subFS, err := fs.Sub(content, "wmtsProxyFront/dist")
 	if err != nil {
 		logger.Fatal("Error creating sub-filesystem: %v", err)
 	}
 	// Debug: List embedded files
-	files, _ := fs.ReadDir(subFS, ".")
-	for _, file := range files {
-		logger.Debug("Embedded file: %s", file.Name())
-	}
+	/*
+		files, _ := fs.ReadDir(subFS, ".")
+		for _, file := range files {
+			logger.Debug("Embedded file: %s", file.Name())
+		}
+	*/
 	// Create a file server handler for the embed filesystem
 	handler := http.FileServer(http.FS(subFS))
 
