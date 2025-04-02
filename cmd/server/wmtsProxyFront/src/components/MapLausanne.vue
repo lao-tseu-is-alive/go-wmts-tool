@@ -41,7 +41,7 @@
         <v-col cols="12" class="ma-0 pa-0">
           <v-sheet color="primary-darken-1" border  class="no-margin">
             <p class="text-right ma-0 pa-0" >
-              {{getFormattedCenter}}, zoom:{{zoom}}
+              {{getFormattedCenter}}, zoom:{{zoom}} &nbsp;
             </p>
           </v-sheet>
         </v-col>
