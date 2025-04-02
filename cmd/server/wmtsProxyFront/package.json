@@ -17,7 +17,6 @@
     "cgil-html-utils": "^2.0.4",
     "ol": "^10.5.0",
     "ol-layerswitcher": "^4.1.2",
-    "ol-map-lausanne": "^0.0.11",
     "proj4": "^2.15.0",
     "roboto-fontface": "*",
     "vue": "^3.4.31",

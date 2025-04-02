@@ -40,17 +40,13 @@
     >
       <v-row>
         <v-col cols="12">
-          <div class="map-container">
-          <map-lausanne ref="mymap"
-                        :zoom="mapZoom"
-                        :center="mapCenter"
-                        :base-layer="baseLayerSelected"
-                        :layers-visible="layersVisibility"
-                        @map-click="handleMapClickEvent"
-                        @map-error="handleMapErrorEvent"
-                        @map-ready="handleMapReadyEvent"
-          />
+          <div class="map" ref="divMap">
           </div>
+        </v-col>
+      </v-row>
+      <v-row>
+        <v-col cols="12">
+          <v-chip>{{center}}</v-chip>
         </v-col>
       </v-row>
     </v-responsive>
@@ -58,53 +54,135 @@
 </template>
 
 <script setup lang="ts">
-import MapLausanne from "ol-map-lausanne";
-import { getFloatParam, getIntegerParam, getStringParam } from "cgil-html-utils";
 import {computed, onMounted, reactive, ref} from "vue";
-import { getLog } from "@/config";
+import { getLog, BACKEND_URL } from "@/config";
+import {
+  type baseLayerType,
+  createLausanneMap,
+  drawBBox, getTileByXY, getTileUrl, getWmtsProxyTileUrl,
+  type PolygonWithVerticesStyleOptions,
+  redrawMarker
+} from "@/components/mapLausanne";
 
 type coordinate2dArray = [number, number]
 const moduleName = "MapLausanne.vue";
 const log = getLog(`${moduleName}`, 4, 4);
-const goeland = [2537612, 1152611] as coordinate2dArray;
-const posX = getFloatParam("x", goeland[0]);
-const posY = getFloatParam("y", goeland[1]);
-const zoom = getIntegerParam("zoom", 9);
-const baseLayerSelected = getStringParam("baselayer", "fonds_geo_osm_bdcad_gris");
-const layersVisibility = getStringParam("lvisibles", "05");
 
-const initialPosition: coordinate2dArray = [posX, posY];
-const coordinateX = ref(posX);
-const coordinateY = ref(posY);
-const mapZoom = ref(zoom);
-const baseLayer = ref(baseLayerSelected);
-const mapCenter: coordinate2dArray = initialPosition;
-const logMessages: string[] = reactive(["📣📣 this is just a log message in App.vue 📣📣"]);
+const myPointLayerName = "GoelandPointLayer";
+const myBBoxLayerName = "GoelandBBoxLayer";
+const goeland = [2537612, 1152611] as coordinate2dArray;
+const defaultZoom = 6
+const defaultBaseLayer: baseLayerType = "fonds_geo_osm_bdcad_couleur"
+const getBaseTileUrl = "https://tilesmn95.lausanne.ch/tiles/1.0.0"
+const zoom= ref(defaultZoom)
+const center = ref(goeland)
+const baseLayer = ref(defaultBaseLayer)
+const debugMsg = ref("")
+const divMap =  ref<HTMLDivElement | null>(null);
+
+
 
 //// COMPUTED SECTION
 const getCurrentBackgroundLayer = computed(() => {
   return `${baseLayer}`;
 });
 //// FUNCTIONS SECTION
-const handleMapClickEvent = (e) => {
-  log.t(`map-click event x: ${e.x}, y: ${e.y}`);
-  coordinateX.value = e.x;
-  coordinateY.value = e.y;
-  mapCenter[0] = e.x;
-  mapCenter[1] = e.y;
-  log.l(`map-click event x,y: [${coordinateX.value}, ${coordinateY.value}], msg: '${e.msg}'`);
-};
 
-const handleMapErrorEvent = (e) => {
-  log.t(`map-error event: ${e}`);
-};
-
-const handleMapReadyEvent = (e) => {
-  log.t(`map-ready event: ${e}`);
-};
 
 onMounted(async () => {
-  const mountedMsg = `🏠 mounted ${moduleName} pos:[${mapCenter[0]}, ${mapCenter[1]}] zoom: ${mapZoom.value}`;
+  const mountedMsg = `🏠 mounted ${moduleName} `;
   log.t(mountedMsg);
+  try {
+    const myOlMap = await createLausanneMap(
+      divMap.value as HTMLDivElement,
+      center.value,
+      zoom.value,
+      myPointLayerName,
+      baseLayer.value);
+    if (myOlMap !== null) {
+      log.l(`✅ map createLausanneMap returned a valid map`);
+      myOlMap.getView().setCenter(center.value);
+      myOlMap.getView().setZoom(zoom.value);
+      /* draw a bbox
+      const imgBBox=[2537000.0,1152000.025,2537999.975,1153000.0];
+      const imgBBoxPolygonWithVerticesStyleOptions: PolygonWithVerticesStyleOptions = {
+          strokeColor: 'blue',
+          strokeWidth: 2,
+          fillColor: 'rgba(255, 0, 0, 0.1)',
+          vertexFillColor: 'yellow',
+          vertexRadius: 3,
+      };
+
+      drawBBox(myOlMap, myBBoxLayerName, imgBBox as [number, number, number, number], false, imgBBoxPolygonWithVerticesStyleOptions);
+      const tileGridBBox=[2532640.0,1145200.0,2548000.0,1158000.0];
+      const tileGridBBoxPolygonWithVerticesStyleOptions: PolygonWithVerticesStyleOptions = {
+          strokeColor: 'black',
+          strokeWidth: 2,
+          fillColor: 'rgba(0, 0, 0, 0.7)',
+          vertexFillColor: 'yellow',
+          vertexRadius: 3,
+      };
+      drawBBox(myOlMap, myBBoxLayerName, tileGridBBox as [number, number, number, number], false, tileGridBBoxPolygonWithVerticesStyleOptions);
+
+       */
+      const tileBBoxWithVerticesStyleOptions: PolygonWithVerticesStyleOptions = {
+        strokeColor: 'red',
+        strokeWidth: 2,
+        fillColor: 'rgba(255, 0, 250, 0.1)',
+        vertexFillColor: 'yellow',
+        vertexRadius: 3,
+      };
+      myOlMap.on("click", async (evt) => {
+        log.t(`map click event`, evt);
+        const x = +Number(evt.coordinate[0]).toFixed(2);
+        const y = +Number(evt.coordinate[1]).toFixed(2);
+        const msg = `map click at [${x},${y}]`;
+        log.l(msg);
+        debugMsg.value = `map click at [${x},${y}]`;
+        center.value = [x, y]
+        myOlMap.getView().setCenter(center.value);
+        const currentZoom = Number(zoom.value)
+        redrawMarker(myOlMap, myPointLayerName, [x, y]);
+        const res = await getTileByXY(defaultBaseLayer, currentZoom, x, y);
+        log.l(`getTileByXY response:`, res);
+        if (res !== null) {
+          const tileUrl = getTileUrl(baseLayer.value as baseLayerType , res.zoom, res.row, res.col)
+          const tileSrc = `${getBaseTileUrl}${tileUrl}`;
+          const wmtsProxyTileUrl = getWmtsProxyTileUrl(baseLayer.value as baseLayerType , res.zoom, res.row, res.col)
+          const wmtsProxyTileSrc = `${BACKEND_URL}${wmtsProxyTileUrl}`;
+          debugMsg.value = `map click at [${x},${y}]\n tileSrc:${tileSrc},\n wms_url:${res.wms_url}`;
+          /*
+          tileImage.innerHTML = `<img src="${tileSrc}" alt="tile image"/>`;
+          tileInfoUrl.innerHTML = `${tileUrl}`;
+          wmsImage.innerHTML = `<img src="${res.wms_url}" alt="wms image"/>`;
+          wmsImageFromWmtsProxy.innerHTML = `<img src="${wmtsProxyTileSrc}" alt="wmts-proxy image"/>`;
+          wmsInfoUrl.innerHTML = `WMS bbox:${res.bbox}`;
+
+           */
+          drawBBox(myOlMap, myBBoxLayerName, res.bbox, true, tileBBoxWithVerticesStyleOptions);
+        }
+
+      });
+      myOlMap.on("moveend", () => {
+        log.t(`map moveend event`);
+        const newCenter = myOlMap.getView().getCenter() || goeland;
+        const realZoom = myOlMap.getView().getZoom() || defaultZoom;
+        log.l(`real zoom: ${realZoom}`);
+        const newZoom = Math.round(realZoom);
+        const x = newCenter[0].toFixed(2);
+        const y = newCenter[1].toFixed(2);
+        center.value = [x, y]
+        zoom.value = newZoom;
+        myOlMap.getView().setZoom(newZoom);
+        const msg = `map view changed to [${newCenter[0].toFixed(2)},${newCenter[1].toFixed(2)}] zoom:${newZoom}`;
+        log.l(msg);
+        debugMsg.value = msg;
+      });
+    }
+
+  } catch (error) {
+    log.e(`event [map-error]💥💥 map initialization error: ${error}`);
+  }
+
 });
 </script>
