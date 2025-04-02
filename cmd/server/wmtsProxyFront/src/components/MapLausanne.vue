@@ -35,7 +35,7 @@
 <template>
   <v-container class="fill-height">
     <v-responsive
-      class="align-center justify-center fill-height mx-auto"
+      class=" justify-center fill-height mx-1"
       max-width="1000"
     >
       <v-row>
@@ -92,23 +92,19 @@ const handleMapClickEvent = (e) => {
   coordinateY.value = e.y;
   mapCenter[0] = e.x;
   mapCenter[1] = e.y;
-  logMessages.push(`map-click event x,y: [${coordinateX.value}, ${coordinateY.value}], msg: '${e.msg}'`);
+  log.l(`map-click event x,y: [${coordinateX.value}, ${coordinateY.value}], msg: '${e.msg}'`);
 };
 
 const handleMapErrorEvent = (e) => {
   log.t(`map-error event: ${e}`);
-  logMessages.push(`map-error event e: ${e}`);
 };
 
 const handleMapReadyEvent = (e) => {
   log.t(`map-ready event: ${e}`);
-  logMessages.push(`map-ready event e: ${e}`);
 };
 
 onMounted(async () => {
-  const mountedMsg = `🏠 mounted App.vue`;
+  const mountedMsg = `🏠 mounted ${moduleName} pos:[${mapCenter[0]}, ${mapCenter[1]}] zoom: ${mapZoom.value}`;
   log.t(mountedMsg);
-  logMessages.push(mountedMsg);
-  log.l(`pos:[${mapCenter[0]}, ${mapCenter[1]}] zoom: ${mapZoom.value} layersVisibility: ${layersVisibility}`);
 });
 </script>
