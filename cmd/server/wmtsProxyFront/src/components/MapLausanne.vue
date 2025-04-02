@@ -20,36 +20,53 @@
 }
 .map {
   position: relative;
-  margin: auto;
-  padding: 0;
-  top: 0;
-  left: 0;
   width: 100%;
   min-width: 300px;
-  height: 610px;
-  min-height: 600px;
+  height: 500px;
+  min-height: 400px;
   background-color: #ffffff;
   color: #bbbbbb;
 }
 </style>
 <template>
-  <v-container class="fill-height">
-    <v-responsive
-      class=" justify-center fill-height mx-1"
-      max-width="1000"
-    >
-      <v-row>
-        <v-col cols="12">
+  <v-container class="fluid">
+      <!--next 2 rows is map-->
+      <v-row  class="ma-0 pa-0 ">
+        <v-col cols="12" class="ma-0 pa-0">
           <div class="map" ref="divMap">
           </div>
         </v-col>
       </v-row>
-      <v-row>
-        <v-col cols="12">
-          <v-chip>{{center}}</v-chip>
+      <v-row class="ma-0 pa-0">
+        <v-col cols="12" class="ma-0 pa-0">
+          <v-sheet color="primary-darken-1" border  class="no-margin">
+            <p class="text-right ma-0 pa-0" >
+              {{getFormattedCenter}}, zoom:{{zoom}}
+            </p>
+          </v-sheet>
         </v-col>
       </v-row>
-    </v-responsive>
+      <!--end of map begin wmts tiles-->
+      <v-row justify="space-evenly" align-items="center"  class="ma-1 pa-0 " >
+        <v-col align="center" cols="4" class="ma-0 pa-0">
+          <v-img :src="wmtsTileSrc" width="256px"></v-img>
+        </v-col>
+        <v-col align="center" cols="4" class="ma-0 pa-0">
+          <v-img :src="wmsUrl" width="256px"></v-img>
+        </v-col>
+        <v-col align="center" cols="4" class="ma-0 pa-0">
+          <v-img :src="wmtsProxyTileSrc" width="256px"></v-img>
+        </v-col>
+      </v-row>
+      <v-row class="ma-0 pa-0">
+        <v-col cols="12" class="ma-0 pa-0 ">
+          <v-sheet color="primary-lighten-1" border  class="no-margin">
+            <p class="ma-0 pa-0 ">
+              {{ debugMsg }}
+            </p>
+          </v-sheet>
+        </v-col>
+      </v-row>
   </v-container>
 </template>
 
@@ -74,10 +91,13 @@ const goeland = [2537612, 1152611] as coordinate2dArray;
 const defaultZoom = 6
 const defaultBaseLayer: baseLayerType = "fonds_geo_osm_bdcad_couleur"
 const getBaseTileUrl = "https://tilesmn95.lausanne.ch/tiles/1.0.0"
+const wmtsTileSrc = ref("")
+const wmsUrl = ref("")
+const wmtsProxyTileSrc =  ref("")
 const zoom= ref(defaultZoom)
 const center = ref(goeland)
 const baseLayer = ref(defaultBaseLayer)
-const debugMsg = ref("")
+const debugMsg = ref("click on the map to display the wmts tiles")
 const divMap =  ref<HTMLDivElement | null>(null);
 
 
@@ -86,6 +106,14 @@ const divMap =  ref<HTMLDivElement | null>(null);
 const getCurrentBackgroundLayer = computed(() => {
   return `${baseLayer}`;
 });
+
+const getFormattedCenter = computed(() => {
+  const x = center.value[0].toFixed(2);
+  const y = center.value[1].toFixed(2);
+  return `[ ${x}, ${y} ]`;
+});
+
+
 //// FUNCTIONS SECTION
 
 
@@ -133,12 +161,11 @@ onMounted(async () => {
         vertexRadius: 3,
       };
       myOlMap.on("click", async (evt) => {
-        log.t(`map click event`, evt);
         const x = +Number(evt.coordinate[0]).toFixed(2);
         const y = +Number(evt.coordinate[1]).toFixed(2);
-        const msg = `map click at [${x},${y}]`;
+        const msg = `⚡⚡ Event map click at [${x},${y}]`;
         log.l(msg);
-        debugMsg.value = `map click at [${x},${y}]`;
+        debugMsg.value = msg;
         center.value = [x, y]
         myOlMap.getView().setCenter(center.value);
         const currentZoom = Number(zoom.value)
@@ -147,41 +174,33 @@ onMounted(async () => {
         log.l(`getTileByXY response:`, res);
         if (res !== null) {
           const tileUrl = getTileUrl(baseLayer.value as baseLayerType , res.zoom, res.row, res.col)
-          const tileSrc = `${getBaseTileUrl}${tileUrl}`;
+          wmtsTileSrc.value = `${getBaseTileUrl}${tileUrl}`;
           const wmtsProxyTileUrl = getWmtsProxyTileUrl(baseLayer.value as baseLayerType , res.zoom, res.row, res.col)
-          const wmtsProxyTileSrc = `${BACKEND_URL}${wmtsProxyTileUrl}`;
-          debugMsg.value = `map click at [${x},${y}]\n tileSrc:${tileSrc},\n wms_url:${res.wms_url}`;
-          /*
-          tileImage.innerHTML = `<img src="${tileSrc}" alt="tile image"/>`;
-          tileInfoUrl.innerHTML = `${tileUrl}`;
-          wmsImage.innerHTML = `<img src="${res.wms_url}" alt="wms image"/>`;
-          wmsImageFromWmtsProxy.innerHTML = `<img src="${wmtsProxyTileSrc}" alt="wmts-proxy image"/>`;
-          wmsInfoUrl.innerHTML = `WMS bbox:${res.bbox}`;
-
-           */
+          wmtsProxyTileSrc.value = `${BACKEND_URL}${wmtsProxyTileUrl}`;
+          wmsUrl.value = res.wms_url
+          debugMsg.value = `tileUrl:${tileUrl}, wmtsProxyTileUrl:${wmtsProxyTileUrl}`;
           drawBBox(myOlMap, myBBoxLayerName, res.bbox, true, tileBBoxWithVerticesStyleOptions);
         }
 
       });
       myOlMap.on("moveend", () => {
-        log.t(`map moveend event`);
+        log.t(`⚡⚡ Event map moveend `);
         const newCenter = myOlMap.getView().getCenter() || goeland;
         const realZoom = myOlMap.getView().getZoom() || defaultZoom;
         log.l(`real zoom: ${realZoom}`);
         const newZoom = Math.round(realZoom);
-        const x = newCenter[0].toFixed(2);
-        const y = newCenter[1].toFixed(2);
-        center.value = [x, y]
+        center.value = newCenter as coordinate2dArray;
         zoom.value = newZoom;
         myOlMap.getView().setZoom(newZoom);
         const msg = `map view changed to [${newCenter[0].toFixed(2)},${newCenter[1].toFixed(2)}] zoom:${newZoom}`;
         log.l(msg);
-        debugMsg.value = msg;
       });
     }
 
   } catch (error) {
-    log.e(`event [map-error]💥💥 map initialization error: ${error}`);
+    const errMsg = `event [map-error]💥💥 map initialization error: ${error}`
+    log.e(errMsg);
+    debugMsg.value = errMsg;
   }
 
 });
