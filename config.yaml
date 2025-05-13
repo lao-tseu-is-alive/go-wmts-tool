@@ -15,9 +15,8 @@ default_values:
         wmts_matrix_set: swissgrid_05
         image_extension: png
         image_mime_type: image/png
-        empty_tile_detection:
-            size: 116
-            md5_hash: 1e3da153be87a493c4c71198366485f290cad43c
+        empty_tile_detection_size: 116
+        empty_tile_detection_md5_hash: 1e3da153be87a493c4c71198366485f290cad43c
 layers:
     fonds_geo_osm_bdcad_gris:
         <<: *layer_default_values
@@ -30,6 +29,5 @@ layers:
         wms_layers: osm_bdcad_couleur_msgroup,planville_cs_autres_msgroup,planville_cs_bati_pol_sout,planville_marquage_msgroup,planville_od_objets_msgroup,planville_arbres_goeland_msgroup,planville_cs_bati_msgroup,planville_od_labels_msgroup
         layer_title: Plan ville
         wmts_bbox: [2520000, 1143000, 2559000, 1169000] #gc extent + 3km buffer
-        empty_tile_detection:
-            size: 116
-            md5_hash: 1e3da153be87a493c4c71198366485f290cad43c
+        empty_tile_detection_size: 116
+        empty_tile_detection_md5_hash: 1e3da153be87a493c4c71198366485f290cad43c

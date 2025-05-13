@@ -15,6 +15,8 @@ const (
 	APP                 = "saveWmtsTiles"
 	defaultWmtsFilePath = "/var/sig/tiles/1.0.0"
 	defaultWmtsConfig   = "wmtsConfig.yaml"
+	defaultLayer        = "fonds_geo_osm_bdcad_couleur"
+	defaultZoomLevel    = 2
 )
 
 func main() {
@@ -25,9 +27,11 @@ func main() {
 	l.Info("🚀🚀 Starting App:'%s', ver:%s, build:%s, from: %s", APP, version.VERSION, version.Build, version.REPOSITORY)
 	// get the yaml config file name received from config parameter
 	configFileName := flag.String("config", defaultWmtsConfig, "config file name")
-	zoomLevel := flag.Int("zoom", 2, "zoom level")
+	layerName := flag.String("layer", defaultLayer, "config file name")
+	zoomLevel := flag.Int("zoom", defaultZoomLevel, "zoom level")
 	flag.Parse()
 	l.Info("ℹ️ Using zoom level : %d", zoomLevel)
+	l.Info("ℹ️ Using layer : %s", *layerName)
 	l.Info("ℹ️ Reading config file: %s", *configFileName)
 	layers, err := wmts.LoadLayerConfigFromYAML(*configFileName)
 	if err != nil {
@@ -38,22 +42,27 @@ func main() {
 		l.Fatal("💥💥 no layers loaded from %s", configFileName)
 	}
 	l.Info("ℹ️ Found %d layers in config file: %s", len(layers), *configFileName)
+	isLayerNameInConfig := false
 	for name, layer := range layers {
 		fmt.Printf("Layer: %s\n", name)
-		fmt.Printf("  Title: %s\n", layer.Title)
-		fmt.Printf("  WMS Backend URL: %s\n", layer.WMSBackendURL)
-		fmt.Printf("  WMS Layers: %s\n", layer.WMSLayers)
-		fmt.Printf("  BBox: %v\n", layer.BBox)
-		fmt.Printf("  WMTS URL Prefix: %s\n", layer.WMTSURLPrefix)
-		fmt.Printf("  Image MIME Type: %s\n\n", layer.ImageMIMEType)
+		if name == *layerName {
+			isLayerNameInConfig = true
+		}
+		wmts.PrintLayerInfo(layer)
 	}
-	wmsBackEndUrl := layers[0].WMSBackendURL
-	wmsStartParams := layers[0].WMSBackendPrefix
+	if !isLayerNameInConfig {
+		l.Fatal("💥💥 layer %s not found in %s", *layerName, *configFileName)
+	}
+	wmsBackEndUrl := layers[*layerName].WMSBackendURL
+	wmsStartParams := layers[*layerName].WMSBackendPrefix
 
 	// Create a new grid
 	myGrid := wmts.CreateNewLausanneGridFromEnvOrFail(wmsBackEndUrl, wmsStartParams)
 	numCols := myGrid.GetMaxNumCols(*zoomLevel)
 	numRows := myGrid.GetMaxNumRows(*zoomLevel)
 	l.Info("ℹ️ will generate % rows and %d cols for zoom level %d", numRows, numCols, *zoomLevel)
+	for row := 0; row < numRows; row++ {
+
+	}
 
 }

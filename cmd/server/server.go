@@ -265,13 +265,7 @@ func main() {
 	firstLayer := ""
 	for name, layer := range layers {
 		firstLayer = name
-		l.Debug("Layer: %s\n", name)
-		l.Debug("  Title: %s\n", layer.Title)
-		l.Debug("  WMS Backend URL: %s\n", layer.WMSBackendURL)
-		l.Debug("  WMS Layers: %s\n", layer.WMSLayers)
-		l.Debug("  BBox: %v\n", layer.BBox)
-		l.Debug("  WMTS URL Prefix: %s\n", layer.WMTSURLPrefix)
-		l.Debug("  Image MIME Type: %s\n\n", layer.ImageMIMEType)
+		wmts.PrintLayerInfo(layer)
 	}
 
 	wmsBackEndUrl := layers[firstLayer].WMSBackendURL

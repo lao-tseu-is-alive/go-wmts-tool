@@ -21,7 +21,7 @@ func (g *Grid) GetTileInfoByXY(x, y, zoomLevel int) (*TileInfo, error) {
 
 	// Get the resolution for the given zoom level.
 	zoomInfo := g.resolutions[zoomLevel]
-	resolution := zoomInfo["cellSize"]
+	resolution := zoomInfo.CellSize
 
 	// Calculate the tile column and row.
 	tileCol := int((float64(x) - g.topLeftX) / (g.tileSize * resolution))

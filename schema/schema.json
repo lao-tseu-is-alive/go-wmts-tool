@@ -85,26 +85,6 @@
       "type": "string",
       "pattern": "(?i)^(?!(SERVICE|VERSION|REQUEST|LAYERS|STYLES|SRS|CRS|BBOX|WIDTH|HEIGHT|FORMAT|BGCOLOR|TRANSPARENT|SLD|EXCEPTIONS|SALT))[a-z0-9_\\-~.]+$"
     },
-
-    "layer_empty_tile_detection": {
-      "title": "Layer empty tile detection",
-      "description": "The rules used to detect the empty tiles",
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "size": {
-          "title": "Title",
-          "description": "The tile size",
-          "type": "integer"
-        },
-        "md5_hash": {
-          "title": "MD5 tile hash",
-          "description": "The MD5 tile hash",
-          "type": "string"
-        }
-      },
-      "required": ["size", "md5_hash"]
-    },
     "layer_wms": {
       "title": "Layer WMS",
       "type": "object",
@@ -137,8 +117,15 @@
         "wmts_dimension_year": {
           "title": "the year value for a dimension of date"
         },
-        "empty_tile_detection": {
-          "$ref": "#/definitions/layer_empty_tile_detection"
+        "empty_tile_detection_size": {
+          "title": "Empty tile detection size",
+          "description": "The size of the empty tile detection",
+          "type": "integer"
+        },
+        "empty_tile_detection_md5_hash": {
+          "title": "Empty tile detection MD5 hash",
+          "description": "The MD5 hash of the empty tile detection",
+          "type": "string"
         },
         "wms_backend_url": {
           "title": "URL",

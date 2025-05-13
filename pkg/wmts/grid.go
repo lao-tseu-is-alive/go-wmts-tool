@@ -6,6 +6,14 @@ import (
 	"math"
 )
 
+// Resolution defines the properties for a WMTS grid zoom level.
+type Resolution struct {
+	ScaleDenominator float64 // Scale denominator for the zoom level
+	CellSize         float64 // Cell size in meters
+	MatrixWidth      float64 // Number of tiles in the width of the matrix
+	MatrixHeight     float64 // Number of tiles in the height of the matrix
+}
+
 // Grid represents the WMTS Swiss Grid system with 28 zoom levels (0-27).
 type Grid struct {
 	Bbox            BBox // Bounding box of the grid in LV95 (EPSG:2056)
@@ -21,7 +29,7 @@ type Grid struct {
 	WmsStartParams  string
 
 	// resolutions is a map of zoom levels to their properties.
-	resolutions map[int]map[string]float64
+	resolutions map[int]Resolution
 }
 
 // GetTile calculates the tile indices (col, row) for a given coordinate and zoom level.
@@ -31,7 +39,7 @@ func (g *Grid) GetTile(coordX, coordY float64, zoomLevel int) (int, int, error) 
 	}
 
 	zoomInfo := g.resolutions[zoomLevel]
-	resolution := zoomInfo["cellSize"]
+	resolution := zoomInfo.CellSize
 
 	tileCol := int((coordX - g.topLeftX) / (g.tileSize * resolution))
 	tileRow := int((g.topLeftY - coordY) / (g.tileSize * resolution))
@@ -76,10 +84,10 @@ func (g *Grid) IsValidTile(zoomLevel, tileCol, tileRow int) bool {
 	if _, ok := g.resolutions[zoomLevel]; !ok {
 		return false
 	}
-	if tileCol < 0 || tileCol > int(g.GetMaxNumCols(zoomLevel)) {
+	if tileCol < 0 || tileCol > g.GetMaxNumCols(zoomLevel) {
 		return false
 	}
-	if tileRow < 0 || tileRow > int(g.GetMaxNumRows(zoomLevel)) {
+	if tileRow < 0 || tileRow > g.GetMaxNumRows(zoomLevel) {
 		return false
 	}
 	return true
@@ -92,18 +100,18 @@ func (g *Grid) GetTileBBox(zoomLevel, tileCol, tileRow int) (*BBox, error) {
 		if _, ok := g.resolutions[zoomLevel]; !ok {
 			return nil, fmt.Errorf("unsupported zoom level. Please choose between 0 and %d", g.MaxZoom())
 		}
-		if tileCol < 0 || tileCol > int(g.GetMaxNumCols(zoomLevel)) {
-			return nil, fmt.Errorf("invalid column index. Please choose between 0 and %d", int(g.GetMaxNumCols(zoomLevel)))
+		if tileCol < 0 || tileCol > g.GetMaxNumCols(zoomLevel) {
+			return nil, fmt.Errorf("invalid column index. Please choose between 0 and %d", g.GetMaxNumCols(zoomLevel))
 		}
-		if tileRow < 0 || tileRow > int(g.GetMaxNumRows(zoomLevel)) {
-			return nil, fmt.Errorf("invalid row index. Please choose between 0 and %d", int(g.GetMaxNumRows(zoomLevel)))
+		if tileRow < 0 || tileRow > g.GetMaxNumRows(zoomLevel) {
+			return nil, fmt.Errorf("invalid row index. Please choose between 0 and %d", g.GetMaxNumRows(zoomLevel))
 		}
 
 		return nil, fmt.Errorf("invalid tile indices") // Should not happen based on previous checks, but good practice.
 	}
 
 	zoomInfo := g.resolutions[zoomLevel]
-	resolution := zoomInfo["cellSize"]
+	resolution := zoomInfo.CellSize
 	xMin := g.topLeftX + float64(tileCol)*g.tileSize*resolution
 	yMax := g.topLeftY - float64(tileRow)*g.tileSize*resolution
 	xMax := xMin + g.tileSize*resolution
@@ -141,35 +149,35 @@ func (g *Grid) GetWidth() float64 {
 }
 
 // GetMaxNumRows returns the maximum number of rows for a given zoom level.
-func (g *Grid) GetMaxNumRows(zoomLevel int) float64 {
+func (g *Grid) GetMaxNumRows(zoomLevel int) int {
 	if _, ok := g.resolutions[zoomLevel]; !ok {
 		panic(fmt.Sprintf("Unsupported zoom level. Please choose between 0 and %d.", g.MaxZoom()))
 	}
 	zoomInfo := g.resolutions[zoomLevel]
-	if matrixHeight, ok := zoomInfo["MatrixHeight"]; ok {
-		return matrixHeight
+	if zoomInfo.MatrixHeight != 0 {
+		return int(zoomInfo.MatrixHeight)
 	}
-	if _, ok := zoomInfo["cellSize"]; !ok {
+	cellSize := zoomInfo.CellSize
+	if cellSize == 0 {
 		panic(fmt.Sprintf("cellSize was not found for zoom_level %d", zoomLevel))
 	}
-	cellSize := zoomInfo["cellSize"]
-	return math.Round(g.GetHeight() / (g.tileSize * cellSize))
+	return int(math.Round(g.GetHeight() / (g.tileSize * cellSize)))
 }
 
 // GetMaxNumCols returns the maximum number of columns for a given zoom level.
-func (g *Grid) GetMaxNumCols(zoomLevel int) float64 {
+func (g *Grid) GetMaxNumCols(zoomLevel int) int {
 	if _, ok := g.resolutions[zoomLevel]; !ok {
 		panic(fmt.Sprintf("Unsupported zoom level. Please choose between 0 and %d.", g.MaxZoom()))
 	}
 	zoomInfo := g.resolutions[zoomLevel]
-	if matrixWidth, ok := zoomInfo["MatrixWidth"]; ok {
-		return matrixWidth
+	if zoomInfo.MatrixWidth != 0 {
+		return int(zoomInfo.MatrixWidth)
 	}
-	if _, ok := zoomInfo["cellSize"]; !ok {
+	cellSize := zoomInfo.CellSize
+	if cellSize == 0 {
 		panic(fmt.Sprintf("cellSize was not found for zoom_level %d", zoomLevel))
 	}
-	cellSize := zoomInfo["cellSize"]
-	return math.Round(g.GetWidth() / (g.tileSize * cellSize))
+	return int(math.Round(g.GetWidth() / (g.tileSize * cellSize)))
 }
 
 // GetTileImage returns the png image for a given tile.
