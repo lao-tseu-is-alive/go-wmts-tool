@@ -1,0 +1,315 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/lao-tseu-is-alive/go-wmts-tool/main/schema/schema.json",
+  "type": "object",
+  "title": "goWmtsTool schema configuration",
+  "additionalProperties": false,
+  "definitions": {
+    "grid": {
+      "title": "Grid",
+      "description": "The WMTS grid definition",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "resolutions": {
+          "title": "Resolutions",
+          "description": "The resolutions in pixel per meter",
+          "type": "array",
+          "items": {
+            "type": "number"
+          }
+        },
+        "bbox": {
+          "title": "Bounding box",
+          "description": "The bounding box in meter",
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "minLength": 4,
+          "maxLength": 4
+        },
+        "srs": {
+          "title": "SRS",
+          "description": "The projection reference",
+          "type": "string",
+          "pattern": "^EPSG:[0-9]+$"
+        },
+        "proj4_literal": {
+          "title": "Proj4 literal",
+          "description": "The Proj4 definition",
+          "type": "string"
+        },
+        "unit": {
+          "title": "Unit",
+          "description": "The projection unit",
+          "type": "string",
+          "default": "m"
+        },
+        "tile_size": {
+          "title": "Tile size",
+          "description": "The tile size in pixel",
+          "type": "integer",
+          "default": 256
+        },
+        "matrix_identifier": {
+          "title": "Matrix identifier",
+          "description": "The identifier to use in the tiles URL, recommend to be resolution (default)",
+          "type": "string",
+          "enum": ["zoom", "resolution"],
+          "default": "zoom"
+        }
+      },
+      "required": ["resolutions", "bbox", "srs"]
+    },
+    "cache_folder": {
+      "title": "Cache folder",
+      "description": "The root folder of the cache",
+      "type": "string",
+      "default": ""
+    },
+    "cache_wmts_capabilities_file": {
+      "title": "Cache WMTS capabilities file",
+      "description": "The WMTS capabilities file name",
+      "type": "string",
+      "default": "1.0.0/WMTSCapabilities.xml"
+    },
+    "cache_filesystem": {
+      "title": "Cache filesystem",
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      },
+      "properties": {
+        "type": { "const": "filesystem" },
+        "wmts_capabilities_file": { "$ref": "#/definitions/cache_wmts_capabilities_file" },
+        "folder": { "$ref": "#/definitions/cache_folder" }
+      }
+    },
+    "cache": {
+      "title": "Cache",
+      "description": "The tiles cache definition",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/cache_filesystem"
+        }
+      ]
+    },
+    "layer_title": {
+      "title": "Layer title",
+      "description": "The title, use to generate the capabilities",
+      "type": "string"
+    },
+    "layer_grid": {
+      "title": "Layer grid",
+      "description": "The used grid name",
+      "type": "string"
+    },
+    "layer_bbox": {
+      "title": "Layer bounding box",
+      "description": "The bounding box where we will generate the tiles",
+      "type": "array",
+      "items": {
+        "type": "number"
+      },
+      "minLength": 4,
+      "maxLength": 4
+    },
+
+    "layer_layers": {
+      "title": "Layer layers",
+      "description": "The WMS layers",
+      "type": "string"
+    },
+    "layer_wmts_style": {
+      "title": "Layer WMTS style",
+      "description": "The WMTS style",
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_\\-\\+~\\.]+$"
+    },
+    "layer_mime_type": {
+      "title": "Layer MIME type",
+      "description": "The MIME type of the tiles",
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9!#$%^&\\*_\\-\\+{}\\|'.`~]+/[a-zA-Z0-9!#$%^&\\*_\\-\\+{}\\|'.`~]+$"
+    },
+    "layer_extension": {
+      "title": "Layer extension",
+      "description": "The layer extension",
+      "type": "string"
+    },
+    "layer_dimension_name": {
+      "title": "Layer dimension name",
+      "description": "The dimension name",
+      "type": "string",
+      "pattern": "(?i)^(?!(SERVICE|VERSION|REQUEST|LAYERS|STYLES|SRS|CRS|BBOX|WIDTH|HEIGHT|FORMAT|BGCOLOR|TRANSPARENT|SLD|EXCEPTIONS|SALT))[a-z0-9_\\-~\\.]+$"
+    },
+    "layer_dimensions": {
+      "title": "layer dimensions",
+      "description": "The WMTS dimensions",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "$ref": "#/definitions/layer_dimension_name"
+          },
+          "generate": {
+            "title": "Generate",
+            "description": "The values that should be generate",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9_\\-\\+~\\.]+$"
+            }
+          },
+          "values": {
+            "title": "Values",
+            "description": "The values present in the capabilities",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9_\\-\\+~\\.]+$"
+            }
+          },
+          "default": {
+            "title": "Default",
+            "description": "The default value present in the capabilities",
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9_\\-\\+~\\.]+$"
+          }
+        },
+        "required": ["name", "generate", "values", "default"]
+      }
+    },
+
+    "layer_empty_tile_detection": {
+      "title": "Layer empty tile detection",
+      "description": "The rules used to detect the empty tiles",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "size": {
+          "title": "Title",
+          "description": "The tile size",
+          "type": "integer"
+        },
+        "md5_hash": {
+          "title": "MD5 tile hash",
+          "description": "The MD5 tile hash",
+          "type": "string"
+        }
+      },
+      "required": ["size", "md5_hash"]
+    },
+    "layer_wms": {
+      "title": "Layer WMS",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "layer_title": {
+          "$ref": "#/definitions/layer_title"
+        },
+        "grid": {
+          "$ref": "#/definitions/layer_grid"
+        },
+        "bbox": {
+          "$ref": "#/definitions/layer_bbox"
+        },
+        "layers": {
+          "$ref": "#/definitions/layer_layers"
+        },
+        "wmts_style": {
+          "$ref": "#/definitions/layer_wmts_style"
+        },
+        "mime_type": {
+          "$ref": "#/definitions/layer_mime_type"
+        },
+        "extension": {
+          "$ref": "#/definitions/layer_extension"
+        },
+        "dimensions": {
+          "$ref": "#/definitions/layer_dimensions"
+        },
+        "empty_tile_detection": {
+          "$ref": "#/definitions/layer_empty_tile_detection"
+        },
+        "url": {
+          "title": "URL",
+          "description": "The WMS service URL",
+          "type": "string"
+        },
+        "params": {
+          "title": "Parameters",
+          "description": "Additional parameters to the WMS query (like dimension)",
+          "type": "object",
+          "additionalProperties": {
+            "description": "The parameter value",
+            "type": "string"
+          }
+        },
+        "version": {
+          "title": "Version",
+          "description": "The used WMS version",
+          "type": "string",
+          "default": "1.1.1"
+        }
+      },
+      "required": ["layers", "url", "grid", "wmts_style", "mime_type", "extension"]
+    },
+
+    "layer": {
+      "title": "Layer",
+      "description": "The layer definition",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/layer_wms"
+        },
+        {
+          "$ref": "#/definitions/layer_mapnik"
+        }
+      ]
+    }
+  },
+  "properties": {
+    "defaults": {
+      "type": "object",
+      "title": "Defaults",
+      "description": "Used to put YAML references"
+    },
+    "grids": {
+      "type": "object",
+      "title": "Grids",
+      "description": "The WMTS grid definitions by grid name",
+      "propertyNames": {
+        "pattern": "^[a-zA-Z0-9_\\-~\\.]+$"
+      },
+      "additionalProperties": {
+        "$ref": "#/definitions/grid"
+      }
+    },
+    "caches": {
+      "title": "Caches",
+      "description": "The tiles caches definitions by name",
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-zA-Z0-9_\\-~\\.]+$"
+      },
+      "additionalProperties": {
+        "$ref": "#/definitions/cache"
+      }
+    },
+    "layers": {
+      "title": "Layers",
+      "description": "The layers definitions by name",
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-zA-Z0-9_\\-~\\.]+$"
+      },
+      "additionalProperties": {
+        "$ref": "#/definitions/layer"
+      }
+    }
+  }
+}
