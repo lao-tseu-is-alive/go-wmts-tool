@@ -26,6 +26,7 @@ type LayerDefaultValues struct {
 type LayerConfig struct {
 	LayerDefaultValues `yaml:",inline"`
 	WMSLayers          string `yaml:"wms_layers"`
+	Name               string `yaml:"layer_name"`
 	Title              string `yaml:"layer_title"`
 	Abstract           string `yaml:"abstract"`
 }
