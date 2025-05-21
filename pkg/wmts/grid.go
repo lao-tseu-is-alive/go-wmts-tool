@@ -182,7 +182,7 @@ func (g *Grid) GetMaxNumCols(zoomLevel int) int {
 }
 
 // SaveTileImage get the wms request for a given tile and save the png file in the local cache path
-func (g *Grid) SaveTileImage(zoomLevel, tileCol, tileRow int, lc LayerConfig, client *http.Client) (string, error) {
+func (g *Grid) SaveTileImage(zoomLevel, tileCol, tileRow int, lc LayerConfig, basePath string, client *http.Client) (string, error) {
 	bbox, err := g.GetTileBBox(zoomLevel, tileCol, tileRow)
 	if err != nil {
 		errMsg := fmt.Sprintf("error in GetTileBBox  zoom:%d, col:%d, row:%d", zoomLevel, tileCol, tileRow)
@@ -191,7 +191,7 @@ func (g *Grid) SaveTileImage(zoomLevel, tileCol, tileRow int, lc LayerConfig, cl
 	layers := lc.WMSLayers
 	params := g.GetWMSParams(*bbox, layers, int(g.GetTileWidth()), int(g.GetTileHeight()), "png") // Use GetTileWidth
 	wmsURL := fmt.Sprintf("%s?%s%s", g.WmsBackendUrl, g.WmsStartParams, tools.BuildQueryString(params))
-	imgPath := GetWmtsImgPath(lc.WMTSURLPrefix, lc.Name, lc.WMTSURLStyle, lc.WMTSDimensionYear, lc.WMTSMatrixSet, "png", zoomLevel, tileRow, tileCol)
+	imgPath := GetWmtsImgPath(basePath, lc.WMTSURLPrefix, lc.Name, lc.WMTSURLStyle, lc.WMTSDimensionYear, lc.WMTSMatrixSet, "png", zoomLevel, tileRow, tileCol)
 	err = tools.GetPngFromUrl(client, wmsURL, imgPath, 2)
 	if err != nil {
 		errMsg := fmt.Sprintf("error in GetPngFromUrl tile  zoom:%d, col:%d, row:%d", zoomLevel, tileCol, tileRow)

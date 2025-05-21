@@ -29,3 +29,4 @@ go.work.sum
 /imbach/config_tiles_cimbach.yaml
 /imbach/WMTSCapabilities.xml
 /tiles/
+/saveWmtsTiles

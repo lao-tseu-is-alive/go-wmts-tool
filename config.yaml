@@ -2,10 +2,10 @@
 caches:
     local:
         cache_type: filesystem
-        folder: /home/cgil/cgdev/golang/go-wmts-tool/tiles
+        folder: /home/cgil/cgdev/golang/go-wmts-tool
 default_values:
     layer_default_values: &layer_default_values
-        wms_backend_url: https://carto.lausanne.ch/mapserv_proxy
+        wms_backend_url: https://cartotest.lausanne.ch/mapserv_proxy
         wms_backend_prefix: ogcserver=source+for+image%2Fpng&
         wmts_bbox: [ 2520000, 1143000, 2559000, 1169000 ] #gc extent + 3km buffer
         wmts_url_prefix: tiles/1.0.0
@@ -34,3 +34,13 @@ layers:
         wmts_bbox: [2520000, 1143000, 2559000, 1169000] #gc extent + 3km buffer
         empty_tile_detection_size: 116
         empty_tile_detection_md5_hash: 1e3da153be87a493c4c71198366485f290cad43c
+    orthophotos_ortho_spec_solitaire_2025_05_08:
+        <<: *layer_default_values
+        wms_layers: orthophotos_ortho_spec_solitaire_2025_05_08
+        layer_name: orthophotos_ortho_spec_solitaire_2025_05_08
+        layer_title: Orthophoto Solitaire Janvier 2025
+        wmts_dimension_name: DATE
+        wmts_dimension_year: 2025
+        empty_tile_detection_size: 116
+        empty_tile_detection_md5_hash: 1e3da153be87a493c4c71198366485f290cad43c
+        wmts_bbox: [2536481, 1155623, 2537035, 1156067]

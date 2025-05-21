@@ -90,7 +90,7 @@
       </div>
     </div>
     <div class="terminal-body">
-      <template v-for="(line, index) in myProps.msgLog" :key="index">
+      <template v-for="(line, index) in myProps.msgLog ?? []" :key="index">
         <div>{{index}}: {{ line }}</div>
       </template>
     </div>
@@ -107,7 +107,7 @@ const logVisible = ref(true);
 const logTitle = ref("📎 log window");
 //// COMPONENT PROPERTIES
 const myProps = defineProps<{
-  titleLog?: string | undefined
+  titleLog: string
   msgLog?: string[] | undefined
 }>();
 
@@ -137,7 +137,7 @@ watch(
   { deep: true },
 );
 //// COMPUTED SECTION
-const logMessagesCount = computed(() => myProps.msgLog.length);
+const logMessagesCount = computed(() => myProps.msgLog?.length ?? 0);
 //// FUNCTIONS SECTION
 
 

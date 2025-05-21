@@ -41,6 +41,11 @@
       "description": "The title, use to generate the capabilities",
       "type": "string"
     },
+    "layer_name": {
+      "title": "Layer name",
+      "description": "The name of the layer (used for directory) ",
+      "type": "string"
+    },
     "layer_grid": {
       "title": "Layer grid",
       "description": "The used grid name",
@@ -92,6 +97,9 @@
       "properties": {
         "layer_title": {
           "$ref": "#/definitions/layer_title"
+        },
+        "layer_name": {
+          "$ref": "#/definitions/layer_name"
         },
         "wmts_matrix_set": {
           "$ref": "#/definitions/layer_grid"

@@ -30,6 +30,7 @@ const (
 	defaultMaxIdleConn         = 100
 	defaultMaxIdleConnPerHost  = 100
 	defaultIdleConnTimeoutSec  = 90
+	formatTraceRequest         = "[%s] %s '%s', IP: [%s],%s\n"
 )
 
 type TileInfoResponse struct {
@@ -66,7 +67,7 @@ func GetMyDefaultHandler(s *gohttp.Server, webRootDir string, content embed.FS) 
 	handler := http.FileServer(http.FS(subFS))
 
 	return func(w http.ResponseWriter, r *http.Request) {
-		gohttp.TraceRequest(handlerName, r, logger)
+		logger.Debug(formatTraceRequest, handlerName, r.Method, r.URL.Path, r.RemoteAddr, "")
 		handler.ServeHTTP(w, r)
 	}
 }
@@ -75,7 +76,7 @@ func getTileInfoByXYHandler(chGrid *wmts.Grid, layers map[string]wmts.LayerConfi
 	handlerName := "getTileInfoByXYHandler"
 	l.Debug("Initial call to %s", handlerName)
 	return func(w http.ResponseWriter, r *http.Request) {
-		gohttp.TraceRequest(handlerName, r, l)
+		l.Debug(formatTraceRequest, handlerName, r.Method, r.URL.Path, r.RemoteAddr, "")
 		// 1. Get parameters using r.PathValue().  MUCH cleaner!
 		layerStr := r.PathValue("layer")
 		zoomStr := r.PathValue("zoom")
@@ -146,12 +147,12 @@ func getTileInfoByXYHandler(chGrid *wmts.Grid, layers map[string]wmts.LayerConfi
 	}
 }
 
-func getTileImageHandler(chGrid *wmts.Grid, layers map[string]wmts.LayerConfig, l golog.MyLogger) http.HandlerFunc {
+func getTileImageHandler(chGrid *wmts.Grid, layers map[string]wmts.LayerConfig, basePath string, l golog.MyLogger) http.HandlerFunc {
 	handlerName := "getTileImageHandler"
 	l.Debug("Initial call to %s", handlerName)
 	client := tools.CreateHTTPClient(defaultMaxClientTimeOutSec, defaultMaxIdleConn, defaultMaxIdleConnPerHost, defaultIdleConnTimeoutSec)
 	return func(w http.ResponseWriter, r *http.Request) {
-		gohttp.TraceRequest(handlerName, r, l)
+		l.Debug(formatTraceRequest, handlerName, r.Method, r.URL.Path, r.RemoteAddr, "")
 		// 1. Get parameters using r.PathValue().  MUCH cleaner!
 		layerStr := r.PathValue("layer")
 		zoomStr := r.PathValue("zoom")
@@ -200,9 +201,7 @@ func getTileImageHandler(chGrid *wmts.Grid, layers map[string]wmts.LayerConfig, 
 		// 5. Build the WMS URL.
 		wmsURL := fmt.Sprintf("%s?%s%s", chGrid.WmsBackendUrl, chGrid.WmsStartParams, tools.BuildQueryString(params))
 
-		prefix := defaultWmtsUrlPrefix
-		style := defaultWmtsUrlStyle
-		imgPath := wmts.GetWmtsImgPath(prefix, layerStr, style, defaultWmtsUrlYear, defaultWmtsMatrixSet, "png", zoom, row, col)
+		imgPath := wmts.GetWmtsImgPath(basePath, layerConfig.WMTSURLPrefix, layerConfig.Name, layerConfig.WMTSURLStyle, layerConfig.WMTSDimensionYear, layerConfig.WMTSMatrixSet, "png", zoom, row, col)
 		// check if tile is in cache
 		_, err = os.Stat(imgPath)
 		if err != nil {
@@ -253,10 +252,12 @@ func main() {
 	l.Info("🚀🚀 Starting App:'%s', ver:%s, build:%s, from: %s", version.APP, version.VERSION, version.Build, version.REPOSITORY)
 
 	configPath := config.GetLayersConfigPathFromEnvOrPanic()
-	layers, err := wmts.LoadLayerConfigFromYAML(configPath)
+	myConfig, err := wmts.ConfigFromYAML(configPath)
 	if err != nil {
 		l.Fatal("error loading %s layer config: %v", configPath, err)
 	}
+	basePath := myConfig.Caches.Local.Folder
+	layers := myConfig.Layers
 	// Check if there are layers loaded
 	if len(layers) == 0 {
 		l.Fatal("no layers loaded from %s", configPath)
@@ -285,7 +286,7 @@ func main() {
 	wmtsUrlTemplate := fmt.Sprintf("/%s/{layer}/%s/{year}/{matrixSet}/{zoom}/{row}/{col}", defaultWmtsUrlPrefix, defaultWmtsUrlStyle)
 	l.Debug("tiles url template: %s", wmtsUrlTemplate)
 	// wmtsUrlTemplate := "/tiles/1.0.0/{layer}/default/{year}/{matrixSet}/{zoom}/{row}/{col}"
-	mux.Handle(fmt.Sprintf("GET %s", wmtsUrlTemplate), gohttp.CorsMiddleware(getTileImageHandler(myGrid, layers, l)))
+	mux.Handle(fmt.Sprintf("GET %s", wmtsUrlTemplate), gohttp.CorsMiddleware(getTileImageHandler(myGrid, layers, basePath, l)))
 	mux.HandleFunc("GET /", GetMyDefaultHandler(server, defaultWebRootDir, content))
 	server.StartServer()
 }

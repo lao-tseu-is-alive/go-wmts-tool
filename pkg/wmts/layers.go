@@ -2,8 +2,6 @@ package wmts
 
 import (
 	"fmt"
-	"gopkg.in/yaml.v3"
-	"os"
 )
 
 // LayerDefaultValues holds the default configuration values for layers
@@ -29,39 +27,6 @@ type LayerConfig struct {
 	Name               string `yaml:"layer_name"`
 	Title              string `yaml:"layer_title"`
 	Abstract           string `yaml:"abstract"`
-}
-
-// Config holds the entire YAML structure
-type Config struct {
-	LayerDefaultValues *LayerDefaultValues    `yaml:"layer_default_values"`
-	Layers             map[string]LayerConfig `yaml:"layers"`
-}
-
-// LoadLayerConfigFromYAML reads a YAML file and returns a map of layer configurations
-func LoadLayerConfigFromYAML(filePath string) (map[string]LayerConfig, error) {
-	// Read the YAML file
-	data, err := os.ReadFile(filePath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read YAML file: %v", err)
-	}
-	// Unmarshal YAML into Config struct
-	var config Config
-	err = yaml.Unmarshal(data, &config)
-	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal YAML: %v", err)
-	}
-
-	// Apply defaults to each layer where applicable
-	layers := make(map[string]LayerConfig)
-	for name, layer := range config.Layers {
-		// If LayerDefaultValues is not explicitly set in the layer, use the global defaults
-		if layer.WMSBackendURL == "" && config.LayerDefaultValues != nil {
-			layer.LayerDefaultValues = *config.LayerDefaultValues
-		}
-		layers[name] = layer
-	}
-
-	return layers, nil
 }
 
 func PrintLayerInfo(layer LayerConfig) {
