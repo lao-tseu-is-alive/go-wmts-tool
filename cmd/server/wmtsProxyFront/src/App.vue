@@ -1,10 +1,10 @@
 <template>
   <v-app>
-    <v-app-bar :elevation="2" density="compact" color="primary">
+    <v-app-bar :elevation="6" density="compact" color="primary">
       <template v-slot:prepend>
         <v-app-bar-nav-icon></v-app-bar-nav-icon>
       </template>
-      <v-img class="align-start" src="/logo.svg" alt="logo" max-width="32px" ></v-img>
+      <v-img class="align-start" src="/logo.svg" alt="logo" max-width="24px" ></v-img>
       <v-app-bar-title>{{APP}}, v{{VERSION}}</v-app-bar-title>
     </v-app-bar>
     <v-main>

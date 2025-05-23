@@ -49,13 +49,19 @@
       <!--end of map begin wmts tiles-->
       <v-row justify="space-evenly" align-items="center"  class="ma-1 pa-0 " >
         <v-col align="center" cols="4" class="ma-0 pa-0">
-          <v-img :src="wmtsTileSrc" width="256px"></v-img>
+          <v-card title="original wmts tile">
+            <v-img :src="wmtsTileSrc" width="256px"></v-img>
+          </v-card>
         </v-col>
         <v-col align="center" cols="4" class="ma-0 pa-0">
-          <v-img :src="wmsUrl" width="256px"></v-img>
+          <v-card title="wms image">
+            <v-img :src="wmsUrl" width="256px"></v-img>
+          </v-card>
         </v-col>
         <v-col align="center" cols="4" class="ma-0 pa-0">
-          <v-img :src="wmtsProxyTileSrc" width="256px"></v-img>
+          <v-card title="proxy wmts tile">
+            <v-img :src="wmtsProxyTileSrc" width="256px"></v-img>
+          </v-card>
         </v-col>
       </v-row>
       <v-row class="ma-0 pa-0">
@@ -76,10 +82,11 @@ import { getLog, BACKEND_URL } from "@/config";
 import {
   type baseLayerType,
   createLausanneMap,
-  drawBBox, getTileByXY, getTileUrl, getWmtsProxyTileUrl,
+  drawBBox, getTileByXY, getTileUrl, getWmtsLayersInfo, getWmtsProxyTileUrl,
   type PolygonWithVerticesStyleOptions,
   redrawMarker
 } from "@/components/mapLausanne";
+import type {LayersInfo} from "@/components/WmtsLayers";
 
 type coordinate2dArray = [number, number]
 const moduleName = "MapLausanne.vue";
@@ -99,6 +106,7 @@ const center = ref(goeland)
 const baseLayer = ref(defaultBaseLayer)
 const debugMsg = ref("click on the map to display the wmts tiles")
 const divMap =  ref<HTMLDivElement | null>(null);
+const arrLayersInfo = reactive<LayersInfo[]>([]);
 
 
 
@@ -113,6 +121,17 @@ const getFormattedCenter = computed(() => {
   return `[ ${x}, ${y} ]`;
 });
 
+const getListWmtsLayers = computed(()=>{
+  const arrLayers: string[] = [];
+  for (const key in arrLayersInfo) {
+    if (Object.prototype.hasOwnProperty.call(arrLayersInfo, key)) {
+      const layerConfig = arrLayersInfo[key];
+      arrLayers.push(`${layerConfig.Name}`)
+    }
+  }
+  return arrLayers;
+})
+
 
 //// FUNCTIONS SECTION
 
@@ -121,6 +140,11 @@ onMounted(async () => {
   const mountedMsg = `🏠 mounted ${moduleName} `;
   log.t(mountedMsg);
   try {
+    const res = await getWmtsLayersInfo();
+    log.l(`getWmtsLayersInfo response:`, res);
+    if (res !== null) {
+      arrLayersInfo.splice(0, arrLayersInfo.length, ...res);
+    }
     const myOlMap = await createLausanneMap(
       divMap.value as HTMLDivElement,
       center.value,

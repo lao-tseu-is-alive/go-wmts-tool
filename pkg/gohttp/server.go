@@ -71,7 +71,7 @@ func CreateNewServerFromEnvOrFail(
 
 }
 
-// (*Server) routes initializes all the default handlers paths of this web server, it is called inside the NewGoHttpServer constructor
+// (*Server) routes initialize all the default handlers paths of this web server, it is called inside the NewGoHttpServer constructor
 func (s *Server) routes() {
 
 	s.router.Handle("GET /time", GetTimeHandler(s.logger))

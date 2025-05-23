@@ -72,6 +72,20 @@ func GetMyDefaultHandler(s *gohttp.Server, webRootDir string, content embed.FS) 
 	}
 }
 
+func GetLayersInfoHandler(layers map[string]wmts.LayerConfig, l golog.MyLogger) http.HandlerFunc {
+	handlerName := "GetLayersInfoHandler"
+	l.Debug("Initial call to %s", handlerName)
+	return func(w http.ResponseWriter, r *http.Request) {
+		l.Debug(formatTraceRequest, handlerName, r.Method, r.URL.Path, r.RemoteAddr, "")
+		// Encode the response as JSON and send it.
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(layers); err != nil {
+			http.Error(w, "Error encoding JSON", http.StatusInternalServerError)
+			return
+		}
+	}
+}
+
 func getTileInfoByXYHandler(chGrid *wmts.Grid, layers map[string]wmts.LayerConfig, l golog.MyLogger) http.HandlerFunc {
 	handlerName := "getTileInfoByXYHandler"
 	l.Debug("Initial call to %s", handlerName)
@@ -282,11 +296,16 @@ func main() {
 		myVersionReader,
 		l)
 	mux := server.GetRouter()
+
+	mux.Handle("GET /layersInfo", gohttp.CorsMiddleware(GetLayersInfoHandler(layers, l)))
+
+	// route to retrieve information about a tile surrounding the given coordinates
 	mux.Handle("GET /getTileByXY/{layer}/{zoom}/{x}/{y}", gohttp.CorsMiddleware(getTileInfoByXYHandler(myGrid, layers, l)))
+
 	wmtsUrlTemplate := fmt.Sprintf("/%s/{layer}/%s/{year}/{matrixSet}/{zoom}/{row}/{col}", defaultWmtsUrlPrefix, defaultWmtsUrlStyle)
 	l.Debug("tiles url template: %s", wmtsUrlTemplate)
-	// wmtsUrlTemplate := "/tiles/1.0.0/{layer}/default/{year}/{matrixSet}/{zoom}/{row}/{col}"
 	mux.Handle(fmt.Sprintf("GET %s", wmtsUrlTemplate), gohttp.CorsMiddleware(getTileImageHandler(myGrid, layers, basePath, l)))
+
 	mux.HandleFunc("GET /", GetMyDefaultHandler(server, defaultWebRootDir, content))
 	server.StartServer()
 }

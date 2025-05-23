@@ -32,6 +32,7 @@ import {register} from "ol/proj/proj4";
 import LayerSwitcher from "ol-layerswitcher";
 import {isNullOrUndefined} from "cgil-html-utils";
 import type {Coordinate} from "ol/coordinate";
+import type {LayersInfo} from "@/components/WmtsLayers";
 
 const log = getLog("mapLausanne", 4, 2);
 const urlLausanneMN95 = "https://tilesmn95.lausanne.ch/tiles/1.0.0/LausanneWMTS.xml";
@@ -574,6 +575,19 @@ export const getTileByXY = async (layer:string, z: number, x: number, y: number)
     return response.data;
   } catch (error) {
     log.e(`getTileByXY error:`, error);
+    return null;
+  }
+}
+
+export const getWmtsLayersInfo = async ():Promise<LayersInfo | null> => {
+  const url = `${BACKEND_URL}/layersInfo`;
+  log.l(`getWmtsLayersInfo url:${url}`);
+  try {
+    const response = await axios.get(url, {timeout: defaultAxiosTimeout});
+    log.l(`getWmtsLayers response:`, response)
+    return response.data;
+  } catch (error) {
+    log.e(`getWmtsLayersInfo error:`, error);
     return null;
   }
 }
