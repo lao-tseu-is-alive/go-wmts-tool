@@ -41,29 +41,18 @@
         <v-col cols="12" class="ma-0 pa-0">
           <v-sheet color="primary-darken-1" border  class="no-margin">
             <p class="text-right ma-0 pa-0" >
-              {{getFormattedCenter}}, zoom:{{zoom}} &nbsp;
+              layerSelected:[{{layerSelected}}], year:[{{yearLayer}}] - {{getFormattedCenter}}, zoom:{{zoom}} &nbsp;
             </p>
           </v-sheet>
         </v-col>
       </v-row>
       <!--end of map begin wmts tiles-->
-      <v-row justify="space-evenly" align-items="center"  class="ma-1 pa-0 " >
-        <v-col align="center" cols="4" class="ma-0 pa-0">
-          <v-card title="original wmts tile">
-            <v-img :src="wmtsTileSrc" width="256px"></v-img>
-          </v-card>
-        </v-col>
-        <v-col align="center" cols="4" class="ma-0 pa-0">
-          <v-card title="wms image">
-            <v-img :src="wmsUrl" width="256px"></v-img>
-          </v-card>
-        </v-col>
-        <v-col align="center" cols="4" class="ma-0 pa-0">
-          <v-card title="proxy wmts tile">
-            <v-img :src="wmtsProxyTileSrc" width="256px"></v-img>
-          </v-card>
-        </v-col>
-      </v-row>
+    <v-row class="ma-0 pa-0">
+      <v-col cols="12" class="ma-0 pa-0 ">
+        <v-select v-model="layerSelected" :items="arrLayersName" density="compact" ></v-select>
+      </v-col>
+    </v-row>
+
       <v-row class="ma-0 pa-0">
         <v-col cols="12" class="ma-0 pa-0 ">
           <v-sheet color="primary-lighten-1" border  class="no-margin">
@@ -73,11 +62,29 @@
           </v-sheet>
         </v-col>
       </v-row>
+
+    <v-row justify="space-evenly" align-items="center"  class="ma-1 pa-0 " >
+      <v-col align="center" cols="4" class="ma-0 pa-0">
+        <v-card title="original wmts tile">
+          <v-img :src="wmtsTileSrc" width="256px"></v-img>
+        </v-card>
+      </v-col>
+      <v-col align="center" cols="4" class="ma-0 pa-0">
+        <v-card title="wms image">
+          <v-img :src="wmsUrl" width="256px"></v-img>
+        </v-card>
+      </v-col>
+      <v-col align="center" cols="4" class="ma-0 pa-0">
+        <v-card title="proxy wmts tile">
+          <v-img :src="wmtsProxyTileSrc" width="256px"></v-img>
+        </v-card>
+      </v-col>
+    </v-row>
   </v-container>
 </template>
 
 <script setup lang="ts">
-import {computed, onMounted, reactive, ref} from "vue";
+import {computed, onMounted, reactive, ref, watch} from "vue";
 import { getLog, BACKEND_URL } from "@/config";
 import {
   type baseLayerType,
@@ -106,12 +113,34 @@ const center = ref(goeland)
 const baseLayer = ref(defaultBaseLayer)
 const debugMsg = ref("click on the map to display the wmts tiles")
 const divMap =  ref<HTMLDivElement | null>(null);
-const arrLayersInfo = reactive<LayersInfo[]>([]);
+const arrLayersInfo = ref<LayersInfo[]>([]);
+const arrLayersName = reactive<string[]>([]);
+const layerSelected = ref("");
+const yearLayer = ref("2021");
 
+
+//// WATCH SECTION
+watch(
+  () => layerSelected.value,
+  (val, oldValue) => {
+    log.t(` watch layerSelected old: ${oldValue}, new val: ${val}`)
+    if (val !== undefined) {
+      if (val !== oldValue) {
+        for (const key in arrLayersInfo.value) {
+          if (key === layerSelected.value) {
+            log.l(`${key} - ${arrLayersInfo.value[key]['WMTSDimensionYear']}`, arrLayersInfo.value[key])
+            yearLayer.value = `${arrLayersInfo.value[key]['WMTSDimensionYear']}`
+          }
+        }
+      }
+    }
+  }
+  //  { immediate: true }
+)
 
 
 //// COMPUTED SECTION
-const getCurrentBackgroundLayer = computed(() => {
+computed(() => {
   return `${baseLayer}`;
 });
 
@@ -121,30 +150,21 @@ const getFormattedCenter = computed(() => {
   return `[ ${x}, ${y} ]`;
 });
 
-const getListWmtsLayers = computed(()=>{
-  const arrLayers: string[] = [];
-  for (const key in arrLayersInfo) {
-    if (Object.prototype.hasOwnProperty.call(arrLayersInfo, key)) {
-      const layerConfig = arrLayersInfo[key];
-      arrLayers.push(`${layerConfig.Name}`)
-    }
-  }
-  return arrLayers;
-})
-
-
 //// FUNCTIONS SECTION
-
 
 onMounted(async () => {
   const mountedMsg = `🏠 mounted ${moduleName} `;
   log.t(mountedMsg);
   try {
-    const res = await getWmtsLayersInfo();
-    log.l(`getWmtsLayersInfo response:`, res);
-    if (res !== null) {
-      arrLayersInfo.splice(0, arrLayersInfo.length, ...res);
+    arrLayersInfo.value = await getWmtsLayersInfo() || [];
+    log.l(`arrLayersInfo:`, arrLayersInfo.value);
+    for (const key in arrLayersInfo.value) {
+      if (Object.prototype.hasOwnProperty.call(arrLayersInfo.value, key)) {
+        const layerConfig = arrLayersInfo.value[key];
+        arrLayersName.push(`${layerConfig.Name}`)
+      }
     }
+    layerSelected.value = arrLayersName[0]
     const myOlMap = await createLausanneMap(
       divMap.value as HTMLDivElement,
       center.value,
@@ -194,12 +214,12 @@ onMounted(async () => {
         myOlMap.getView().setCenter(center.value);
         const currentZoom = Number(zoom.value)
         redrawMarker(myOlMap, myPointLayerName, [x, y]);
-        const res = await getTileByXY(defaultBaseLayer, currentZoom, x, y);
+        const res = await getTileByXY(layerSelected.value, currentZoom, x, y);
         log.l(`getTileByXY response:`, res);
         if (res !== null) {
-          const tileUrl = getTileUrl(baseLayer.value as baseLayerType , res.zoom, res.row, res.col)
+          const tileUrl = getTileUrl(layerSelected.value , yearLayer.value, res.zoom, res.row, res.col)
           wmtsTileSrc.value = `${getBaseTileUrl}${tileUrl}`;
-          const wmtsProxyTileUrl = getWmtsProxyTileUrl(baseLayer.value as baseLayerType , res.zoom, res.row, res.col)
+          const wmtsProxyTileUrl = getWmtsProxyTileUrl(layerSelected.value, yearLayer.value, res.zoom, res.row, res.col)
           wmtsProxyTileSrc.value = `${BACKEND_URL}${wmtsProxyTileUrl}`;
           wmsUrl.value = res.wms_url
           debugMsg.value = `tileUrl:${tileUrl}, wmtsProxyTileUrl:${wmtsProxyTileUrl}`;

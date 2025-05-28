@@ -555,8 +555,8 @@ export async function createLausanneMap(
   map.addControl(layerSwitcher);
   return map;
 }
-export const getTileUrl = (layer: baseLayerType, z: number, row: number, col: number) => `/${layer}/default/2021/swissgrid_05/${z}/${row}/${col}.png`
-export const getWmtsProxyTileUrl = (layer: baseLayerType, z: number, row: number, col: number) => `/tiles/1.0.0/${layer}/default/2021/swissgrid_05/${z}/${row}/${col}`
+export const getTileUrl = (layer: string, year:string,z: number, row: number, col: number) => `/${layer}/default/${year}/swissgrid_05/${z}/${row}/${col}.png`
+export const getWmtsProxyTileUrl = (layer: string,year:string, z: number, row: number, col: number) => `/tiles/1.0.0/${layer}/default/${year}/swissgrid_05/${z}/${row}/${col}`
 
 export interface tileInfo {
   "zoom": number,
@@ -579,15 +579,15 @@ export const getTileByXY = async (layer:string, z: number, x: number, y: number)
   }
 }
 
-export const getWmtsLayersInfo = async ():Promise<LayersInfo | null> => {
+export const getWmtsLayersInfo = async ():Promise<LayersInfo[]> => {
   const url = `${BACKEND_URL}/layersInfo`;
-  log.l(`getWmtsLayersInfo url:${url}`);
+  log.l(`url:${url}`);
   try {
     const response = await axios.get(url, {timeout: defaultAxiosTimeout});
-    log.l(`getWmtsLayers response:`, response)
+    //log.l(`response:`, response)
     return response.data;
   } catch (error) {
-    log.e(`getWmtsLayersInfo error:`, error);
-    return null;
+    log.e(`error:`, error);
+    return [];
   }
 }
