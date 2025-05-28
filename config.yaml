@@ -5,7 +5,7 @@ caches:
         folder: /home/cgil/cgdev/golang/go-wmts-tool
 default_values:
     layer_default_values: &layer_default_values
-        wms_backend_url: https://cartotest.lausanne.ch/mapserv_proxy
+        wms_backend_url: https://carto.lausanne.ch/mapserv_proxy
         wms_backend_prefix: ogcserver=source+for+image%2Fpng&
         wmts_bbox: [ 2520000, 1143000, 2559000, 1169000 ] #gc extent + 3km buffer
         wmts_url_prefix: tiles/1.0.0
@@ -23,15 +23,16 @@ layers:
         wms_layers: osm_bdcad_gris_msgroup,bdcad_cs_autres_msgroup,bdcad_cs_bati_msgroup,bdcad_cs_bati_eca,bdcad_cs_ad_bati,bdcad_od_objets_msgroup,bdcad_od_labels_msgroup,bdcad_bf_parc_pol,bdcad_bf_parc_pol_dp_msgroup,bdcad_bf_parc_pol_ddp_msgroup,bdcad_bf_point,bdcad_bf_parc_no
         layer_title: Plan cadastral
         layer_name: fonds_geo_osm_bdcad_gris
-        # bbox we want to generate tiles
-        wmts_bbox: [2520000, 1143000, 2559000, 1169000] #gc extent + 3km buffer
+        # bbox we want to generate tiles no need for buffer now
+        # wmts_bbox: [2520000, 1143000, 2559000, 1169000] #gc extent + 3km buffer
+        wmts_bbox: [2532500, 1149000, 2545625, 1161000] #LausanneMaxExtent no need for buffer now
     fonds_geo_osm_bdcad_couleur:
         <<: *layer_default_values
         wms_layers: osm_bdcad_couleur_msgroup,planville_cs_autres_msgroup,planville_cs_bati_pol_sout,planville_marquage_msgroup,planville_od_objets_msgroup,planville_arbres_goeland_msgroup,planville_cs_bati_msgroup,planville_od_labels_msgroup
         layer_title: Plan ville
         layer_name: fonds_geo_osm_bdcad_couleur
         # bbox we want to generate tiles
-        wmts_bbox: [2520000, 1143000, 2559000, 1169000] #gc extent + 3km buffer
+        wmts_bbox: [2532500, 1149000, 2545625, 1161000] #LausanneMaxExtent no need for buffer now
         empty_tile_detection_size: 116
         empty_tile_detection_md5_hash: 1e3da153be87a493c4c71198366485f290cad43c
     orthophotos_ortho_spec_solitaire_2025_05_08:
