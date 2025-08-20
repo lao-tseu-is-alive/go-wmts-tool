@@ -5,7 +5,7 @@ caches:
         folder: /home/cgil/cgdev/golang/go-wmts-tool
 default_values:
     layer_default_values: &layer_default_values
-        wms_backend_url: https://carto.lausanne.ch/mapserv_proxy
+        wms_backend_url: https://cartotest.lausanne.ch/mapserv_proxy
         wms_backend_prefix: ogcserver=source+for+image%2Fpng&
         wmts_bbox: [ 2520000, 1143000, 2559000, 1169000 ] #gc extent + 3km buffer
         wmts_url_prefix: tiles/1.0.0

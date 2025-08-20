@@ -12,24 +12,26 @@ import (
 	"sync"
 )
 
-//saveWmtsTiles allows saving all png tiles for a given zoom level and layer
+// saveWmtsTiles allows saving all png tiles for a given zoom level and layer
 
 const (
 	APP                        = "saveWmtsTiles"
 	defaultWmtsConfig          = "wmtsConfig.yaml"
 	defaultLayer               = "fonds_geo_osm_bdcad_couleur"
-	defaultZoomLevel           = 2
+	defaultZoomLevel           = 3
 	defaultMaxClientTimeOutSec = 10
 	defaultMaxIdleConn         = 100
 	defaultMaxIdleConnPerHost  = 100
 	defaultIdleConnTimeoutSec  = 90
 	defaultNumWorkers          = 4 // Default number of workers
+	metaTileSize               = 4 // Number of tiles per side in a meta-tile (e.g., 2 for a 2x2 meta-tile)
 )
 
-type tileTask struct {
+// metaTileTask defines a task to process a meta-tile.
+type metaTileTask struct {
 	zoomLevel int
-	col       int
-	row       int
+	startCol  int
+	startRow  int
 }
 
 func main() {
@@ -84,10 +86,6 @@ func main() {
 	// Create a new grid
 	myGrid := wmts.CreateNewLausanneGridFromEnvOrFail(wmsBackEndUrl, wmsStartParams)
 	// Get tile boundaries
-	numCols := myGrid.GetMaxNumCols(*zoomLevel)
-	numRows := myGrid.GetMaxNumRows(*zoomLevel)
-	l.Info("ℹ️ will generate %d rows and %d cols for zoom level %d", numRows, numCols, *zoomLevel)
-	// get the min col and row from the lausanne wmts grid package
 	minCol, maxRow, err := myGrid.GetTile(xMin, yMin, *zoomLevel)
 	if err != nil {
 		l.Fatal("💥💥 GetTile(%f, %f, %d) got error: %v", xMin, yMin, *zoomLevel, err)
@@ -106,28 +104,29 @@ func main() {
 	// Initialize progress bar
 	bar := progressbar.Default(int64(totalTiles), fmt.Sprintf("Processing tiles for layer %s, zoom %d", *layerName, *zoomLevel))
 
-	// Create a channel for tasks
-	tasks := make(chan tileTask, totalTiles)
+	// Create a channel for tasks. The channel now holds metaTileTask.
+	tasks := make(chan metaTileTask, (totalTiles)/(metaTileSize*metaTileSize)+1)
 	var wg sync.WaitGroup
 
 	// Channel to track completed tasks
 	done := make(chan struct{}, totalTiles)
 
-	// Start a worker pool
+	// Start a worker pool. Each worker now processes a meta-tile.
 	for i := 0; i < *numWorkers; i++ {
 		wg.Add(1)
 		go func(workerID int) {
 			defer wg.Done()
-			for row := minRow; row <= maxRow; row++ {
-				for task := range tasks {
-					imagePath, err := myGrid.SaveTileImage(task.zoomLevel, task.col, task.row, layers[*layerName], basePath, client)
-					if err != nil {
-						l.Error("💥 Worker %d: SaveTileImage for zoom:%d, tile (row:%d, col:%d) trying to save image to: %s got error: %v", workerID, task.zoomLevel, task.row, task.col, imagePath, err)
-					} else {
-						if *verbose {
-							l.Info("ℹ️ Worker %d: zoom:%d, tile (row:%3d, col:%3d) saved image to: %s", workerID, task.zoomLevel, task.row, task.col, imagePath)
-						}
-						done <- struct{}{} // Signal task completion
+			for task := range tasks {
+				err := myGrid.SaveTilesFromMetaTile(task.zoomLevel, task.startCol, task.startRow, metaTileSize, metaTileSize, layers[*layerName], basePath, client)
+				if err != nil {
+					l.Error("💥 Worker %d: SaveTilesFromMetaTile for zoom:%d, meta-tile at (row:%d, col:%d) failed: %v", workerID, task.zoomLevel, task.startRow, task.startCol, err)
+				} else {
+					if *verbose {
+						l.Info("ℹ️ Worker %d: zoom:%d, meta-tile at (row:%d, col:%d) saved", workerID, task.zoomLevel, task.startRow, task.startCol)
+					}
+					// Signal completion for each tile in the meta-tile
+					for j := 0; j < metaTileSize*metaTileSize; j++ {
+						done <- struct{}{}
 					}
 				}
 			}
@@ -139,10 +138,11 @@ func main() {
 			bar.Add(1) // Increment progress bar
 		}
 	}()
-	// Enqueue tasks
-	for row := minRow; row <= maxRow; row++ {
-		for col := minCol; col <= maxCol; col++ {
-			tasks <- tileTask{zoomLevel: *zoomLevel, col: col, row: row}
+
+	// Enqueue meta-tile tasks
+	for row := minRow; row <= maxRow; row += metaTileSize {
+		for col := minCol; col <= maxCol; col += metaTileSize {
+			tasks <- metaTileTask{zoomLevel: *zoomLevel, startCol: col, startRow: row}
 		}
 	}
 

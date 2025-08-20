@@ -2,9 +2,14 @@ package wmts
 
 import (
 	"fmt"
+	"github.com/lao-tseu-is-alive/go-wmts-tool/pkg/imgTools"
 	"github.com/lao-tseu-is-alive/go-wmts-tool/pkg/tools"
+	"image"
+	"image/png"
 	"math"
 	"net/http"
+	"os"
+	"path/filepath"
 )
 
 // Resolution defines the properties for a WMTS grid zoom level.
@@ -209,4 +214,88 @@ func (g *Grid) GetTileWmsUrl(zoomLevel, tileCol, tileRow int, layers string) (st
 	params := g.GetWMSParams(*bbox, layers, int(g.GetTileWidth()), int(g.GetTileHeight()), "png")
 	wmsURL := fmt.Sprintf("%s?%s%s", g.WmsBackendUrl, g.WmsStartParams, tools.BuildQueryString(params))
 	return wmsURL, nil
+}
+
+// SaveTilesFromMetaTile fetches a larger image (a "meta-tile") from the WMS server,
+// splits it into individual tiles, and saves them to the local cache.
+// This approach reduces the number of HTTP requests, improving performance.
+func (g *Grid) SaveTilesFromMetaTile(zoomLevel, startCol, startRow, numCols, numRows int, lc LayerConfig, basePath string, client *http.Client) error {
+	// 1. Calculate the bounding box for the entire meta-tile.
+	// BBox of the top-left tile
+	topLeftBBox, err := g.GetTileBBox(zoomLevel, startCol, startRow)
+	if err != nil {
+		return fmt.Errorf("failed to get bounding box for top-left tile: %w", err)
+	}
+
+	// BBox of the bottom-right tile
+	bottomRightBBox, err := g.GetTileBBox(zoomLevel, startCol+numCols-1, startRow+numRows-1)
+	if err != nil {
+		return fmt.Errorf("failed to get bounding box for bottom-right tile: %w", err)
+	}
+
+	// The meta-tile's bounding box is the combination of the top-left and bottom-right tile BBoxes.
+	metaBBox := &BBox{
+		XMin: topLeftBBox.XMin,
+		YMin: bottomRightBBox.YMin,
+		XMax: bottomRightBBox.XMax,
+		YMax: topLeftBBox.YMax,
+	}
+
+	// 2. Make a single WMS request for the entire meta-tile.
+	metaTileWidth := int(g.GetTileWidth()) * numCols
+	metaTileHeight := int(g.GetTileHeight()) * numRows
+	params := g.GetWMSParams(*metaBBox, lc.WMSLayers, metaTileWidth, metaTileHeight, "png")
+	wmsURL := fmt.Sprintf("%s?%s%s", g.WmsBackendUrl, g.WmsStartParams, tools.BuildQueryString(params))
+
+	resp, err := client.Get(wmsURL)
+	if err != nil {
+		return fmt.Errorf("WMS request for meta-tile failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("WMS request returned non-OK status: %d", resp.StatusCode)
+	}
+
+	// Decode the image from the response body.
+	img, _, err := image.Decode(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to decode meta-tile image: %w", err)
+	}
+
+	// 3. Split the meta-tile image into individual tiles.
+	tileWidth := int(g.GetTileWidth())
+	tileHeight := int(g.GetTileHeight())
+	tiles, err := imgTools.SplitImage(img, tileWidth, tileHeight)
+	if err != nil {
+		return fmt.Errorf("failed to split meta-tile image: %w", err)
+	}
+
+	// 4. Save each individual tile.
+	tileIndex := 0
+	for row := 0; row < numRows; row++ {
+		for col := 0; col < numCols; col++ {
+			tileRow := startRow + row
+			tileCol := startCol + col
+			imgPath := GetWmtsImgPath(basePath, lc.WMTSURLPrefix, lc.Name, lc.WMTSURLStyle, lc.WMTSDimensionYear, lc.WMTSMatrixSet, "png", zoomLevel, tileRow, tileCol)
+
+			// Create directory if it doesn't exist
+			if err := os.MkdirAll(filepath.Dir(imgPath), os.ModePerm); err != nil {
+				return fmt.Errorf("failed to create directory for tile: %w", err)
+			}
+
+			outFile, err := os.Create(imgPath)
+			if err != nil {
+				return fmt.Errorf("failed to create tile image file: %w", err)
+			}
+			defer outFile.Close()
+
+			if err := png.Encode(outFile, tiles[tileIndex]); err != nil {
+				return fmt.Errorf("failed to encode tile image: %w", err)
+			}
+			tileIndex++
+		}
+	}
+
+	return nil
 }

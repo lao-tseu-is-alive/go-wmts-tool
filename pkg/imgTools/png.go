@@ -2,6 +2,7 @@ package imgTools
 
 import (
 	"bytes"
+	"fmt"
 	"image"
 	"image/color"
 	"image/png"
@@ -72,4 +73,37 @@ func GetPngImg(red, green, blue, alpha uint8, w, h int) (*image.RGBA, error) {
 		Rect:   image.Rect(0, 0, w, h),
 	}, nil
 
+}
+
+// SplitImage splits an image into tiles of a specified width and height.
+// It returns a slice of images, each representing a tile.
+func SplitImage(img image.Image, tileWidth, tileHeight int) ([]image.Image, error) {
+	bounds := img.Bounds()
+	imgWidth := bounds.Dx()
+	imgHeight := bounds.Dy()
+
+	// Check if the image can be evenly divided into tiles of the given dimensions.
+	if imgWidth%tileWidth != 0 || imgHeight%tileHeight != 0 {
+		return nil, fmt.Errorf("image dimensions (%d x %d) are not perfectly divisible by tile dimensions (%d x %d)", imgWidth, imgHeight, tileWidth, tileHeight)
+	}
+
+	numCols := imgWidth / tileWidth
+	numRows := imgHeight / tileHeight
+	tiles := make([]image.Image, 0, numCols*numRows)
+
+	// Iterate over the image and extract each tile.
+	for y := 0; y < numRows; y++ {
+		for x := 0; x < numCols; x++ {
+			tileRect := image.Rect(x*tileWidth, y*tileHeight, (x+1)*tileWidth, (y+1)*tileHeight)
+
+			// SubImage returns an image that shares pixels with the original.
+			// This is efficient as it avoids copying pixel data.
+			tile := img.(interface {
+				SubImage(r image.Rectangle) image.Image
+			}).SubImage(tileRect)
+			tiles = append(tiles, tile)
+		}
+	}
+
+	return tiles, nil
 }
