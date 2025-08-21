@@ -32,3 +32,4 @@ go.work.sum
 /saveWmtsTiles
 /releases/
 /saveWmtsTiles-linux-amd64
+/saveWmtsTiles-qgis-pdvp-config.yaml
