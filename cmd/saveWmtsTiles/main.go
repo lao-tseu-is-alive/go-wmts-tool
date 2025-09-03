@@ -6,6 +6,7 @@ import (
 	"log"
 	"sync"
 
+	"github.com/lao-tseu-is-alive/go-wmts-tool/pkg/config"
 	"github.com/lao-tseu-is-alive/go-wmts-tool/pkg/golog"
 	"github.com/lao-tseu-is-alive/go-wmts-tool/pkg/tools"
 	"github.com/lao-tseu-is-alive/go-wmts-tool/pkg/version"
@@ -26,6 +27,7 @@ const (
 	defaultIdleConnTimeoutSec  = 90
 	defaultNumWorkers          = 4 // Default number of workers
 	defaultMetaTileSize        = 4 // Number of tiles per side in a meta-tile (e.g., 2 for a 2x2 meta-tile)
+	defaultBufferSize          = 50
 )
 
 // metaTileTask defines a task to process a meta-tile.
@@ -49,6 +51,10 @@ func main() {
 	numWorkers := flag.Int("workers", defaultNumWorkers, "number of worker goroutines")
 	ptrMetaTileSize := flag.Int("metatile", defaultMetaTileSize, "number of tiles size per request(e.g. 2 for a 2x2 meta-tile) default is 4 ")
 	metaTileSize := *ptrMetaTileSize
+	bufferFromEnv := config.GetBufferSizeFromEnvOrPanic(defaultBufferSize)
+	// command line override
+	ptrBuffer := flag.Int("buffer", bufferFromEnv, "buffer in pixel around  tiles (default is 50)")
+	buffer := *ptrBuffer
 	flag.Parse()
 
 	l.Info("ℹ️ Using zoom level : %d", *zoomLevel)
@@ -87,7 +93,7 @@ func main() {
 	xMin, yMin, xMax, yMax := wmtsBBox[0], wmtsBBox[1], wmtsBBox[2], wmtsBBox[3]
 
 	// Create a new grid
-	myGrid := wmts.CreateNewLausanneGridFromEnvOrFail(wmsBackEndUrl, wmsStartParams)
+	myGrid := wmts.CreateNewLausanneGridFromEnvOrFail(wmsBackEndUrl, wmsStartParams, l)
 	// Get tile boundaries
 	minCol, maxRow, err := myGrid.GetTile(xMin, yMin, *zoomLevel)
 	if err != nil {
@@ -120,7 +126,7 @@ func main() {
 		go func(workerID int) {
 			defer wg.Done()
 			for task := range tasks {
-				err := myGrid.SaveTilesFromMetaTile(task.zoomLevel, task.startCol, task.startRow, metaTileSize, metaTileSize, layers[*layerName], basePath, client)
+				err := myGrid.SaveTilesFromMetaTile(task.zoomLevel, task.startCol, task.startRow, metaTileSize, metaTileSize, buffer, layers[*layerName], basePath, client)
 				if err != nil {
 					l.Error("💥 Worker %d: SaveTilesFromMetaTile for zoom:%d, meta-tile at (row:%d, col:%d) failed: %v", workerID, task.zoomLevel, task.startRow, task.startCol, err)
 				} else {

@@ -1,7 +1,9 @@
 package wmts
 
+import "github.com/lao-tseu-is-alive/go-wmts-tool/pkg/golog"
+
 // NewLausanneGrid creates and initializes a new WMTS Grid instance for Lausanne in Switzerland.
-func NewLausanneGrid(wmsBackEndUrl, wmsStartParams string) *Grid {
+func NewLausanneGrid(wmsBackEndUrl, wmsStartParams string, l golog.MyLogger) *Grid {
 	g := &Grid{
 		Bbox: BBox{
 			XMin: 2420000.0,
@@ -30,11 +32,12 @@ func NewLausanneGrid(wmsBackEndUrl, wmsStartParams string) *Grid {
 			8: {ScaleDenominator: 357.14285714285717, CellSize: 0.1, MatrixWidth: 18750.0, MatrixHeight: 12500},
 			9: {ScaleDenominator: 178.57142857142858, CellSize: 0.05, MatrixWidth: 37500.0, MatrixHeight: 25000},
 		},
+		l: l,
 	}
 	return g
 }
 
-func CreateNewLausanneGridFromEnvOrFail(wmsBackEndUrl, wmsStartParams string) *Grid {
-	return NewLausanneGrid(wmsBackEndUrl, wmsStartParams)
+func CreateNewLausanneGridFromEnvOrFail(wmsBackEndUrl, wmsStartParams string, l golog.MyLogger) *Grid {
+	return NewLausanneGrid(wmsBackEndUrl, wmsStartParams, l)
 
 }

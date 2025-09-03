@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 )
 
 // GetWmsBackendUrlFromEnvOrPanic returns a string to be used with WMS based on the content of the env variable
@@ -33,4 +34,21 @@ func GetLayersConfigPathFromEnvOrPanic() string {
 		panic("💥💥 ERROR: ENV LAYERS_CONFIG_PATH should contain your WMS layers configuration.")
 	}
 	return fmt.Sprintf("%s", val)
+}
+
+// GetBufferSizeFromEnvOrPanic returns the buffer to use in WMS queries
+func GetBufferSizeFromEnvOrPanic(defaultBuffer int) int {
+	buffer := defaultBuffer
+	var err error
+	val, exist := os.LookupEnv("BUFFER_SIZE")
+	if exist {
+		buffer, err = strconv.Atoi(val)
+		if err != nil {
+			panic(fmt.Errorf("💥💥 ERROR:  ENV BUFFER_SIZE should contain a valid integer. %v", err))
+		}
+	}
+	if buffer < 0 || buffer > 256 {
+		panic(fmt.Errorf("💥💥 ERROR: BUFFER_SIZE should contain an integer between 0 and 256 inclusive. Err: %v", err))
+	}
+	return buffer
 }

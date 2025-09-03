@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"image/draw"
 	"image/png"
+
+	"github.com/lao-tseu-is-alive/go-wmts-tool/pkg/golog"
 )
 
 // GeneratePng creates a PNG image with the specified color and dimensions.
@@ -106,4 +109,25 @@ func SplitImage(img image.Image, tileWidth, tileHeight int) ([]image.Image, erro
 	}
 
 	return tiles, nil
+}
+
+func CropImage(bufferedImage image.Image, buffer int, l golog.MyLogger) image.Image {
+	l.Debug("CropImage bufferedImg wxh = %v , buffer : %d", bufferedImage.Bounds(), buffer)
+	originalWidth := bufferedImage.Bounds().Dx() - (buffer * 2)
+	originalHeight := bufferedImage.Bounds().Dy() - (buffer * 2)
+	l.Debug("creating new image wxh = %d x %d", originalWidth, originalHeight)
+	// Create a new blank image with the original dimensions
+	croppedImage := image.NewRGBA(image.Rect(0, 0, originalWidth, originalHeight))
+
+	// Define the rectangle to crop from the buffered image
+	cropRect := image.Rect(buffer, buffer, buffer+originalWidth, buffer+originalHeight)
+
+	// Draw the cropped section onto the new image
+	ZP := image.Point{
+		X: buffer,
+		Y: buffer,
+	}
+	l.Debug("about to draw  %v , %v", cropRect.Min, ZP)
+	draw.Draw(croppedImage, croppedImage.Bounds(), bufferedImage, cropRect.Min, draw.Src)
+	return croppedImage
 }

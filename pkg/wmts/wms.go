@@ -6,7 +6,7 @@ import (
 )
 
 // GetWMSParams generates a map of WMS parameters based on the provided inputs.
-func (g *Grid) GetWMSParams(bbox BBox, layers string, width, height int, imageFormat string) map[string]string {
+func (g *Grid) GetWMSParams(bbox BBox, layers string, width, height, buffer int, imageFormat string) map[string]string {
 	if width <= 0 {
 		width = 256
 	}
@@ -16,8 +16,17 @@ func (g *Grid) GetWMSParams(bbox BBox, layers string, width, height int, imageFo
 	if imageFormat == "" {
 		imageFormat = "png"
 	}
+	// The BBOX needs to be expanded to account for the buffer.
+	// We'll calculate the new BBox based on the resolution.
+	resolution := (bbox.XMax - bbox.XMin) / float64(width)
+	bufferUnits := float64(buffer) * resolution
 
-	bboxStr := bbox.String()
+	bufferedBbox := BBox{
+		XMin: bbox.XMin - bufferUnits,
+		YMin: bbox.YMin - bufferUnits,
+		XMax: bbox.XMax + bufferUnits,
+		YMax: bbox.YMax + bufferUnits,
+	}
 
 	params := map[string]string{
 		"SERVICE":     "WMS",
@@ -26,12 +35,12 @@ func (g *Grid) GetWMSParams(bbox BBox, layers string, width, height int, imageFo
 		"FORMAT":      fmt.Sprintf("image/%s", imageFormat),
 		"TRANSPARENT": strconv.FormatBool(imageFormat == "png"), // "true" if png, "false" otherwise
 		"LAYERS":      layers,
-		"WIDTH":       fmt.Sprintf("%d", width),
-		"HEIGHT":      fmt.Sprintf("%d", height),
-		"CRS":         "EPSG:2056",
-		"STYLES":      "",
-		"BBOX":        bboxStr,
-		"BUFFER":      "500",
+		// The width and height must also be increased
+		"WIDTH":  fmt.Sprintf("%d", width+(buffer*2)),
+		"HEIGHT": fmt.Sprintf("%d", height+(buffer*2)),
+		"CRS":    "EPSG:2056",
+		"STYLES": "",
+		"BBOX":   bufferedBbox.String(),
 	}
 
 	return params

@@ -4,18 +4,19 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
-	"github.com/lao-tseu-is-alive/go-wmts-tool/pkg/config"
-	"github.com/lao-tseu-is-alive/go-wmts-tool/pkg/gohttp"
-	"github.com/lao-tseu-is-alive/go-wmts-tool/pkg/golog"
-	"github.com/lao-tseu-is-alive/go-wmts-tool/pkg/tools"
-	"github.com/lao-tseu-is-alive/go-wmts-tool/pkg/version"
-	"github.com/lao-tseu-is-alive/go-wmts-tool/pkg/wmts"
 	"io"
 	"io/fs"
 	"log"
 	"net/http"
 	"os"
 	"strconv"
+
+	"github.com/lao-tseu-is-alive/go-wmts-tool/pkg/config"
+	"github.com/lao-tseu-is-alive/go-wmts-tool/pkg/gohttp"
+	"github.com/lao-tseu-is-alive/go-wmts-tool/pkg/golog"
+	"github.com/lao-tseu-is-alive/go-wmts-tool/pkg/tools"
+	"github.com/lao-tseu-is-alive/go-wmts-tool/pkg/version"
+	"github.com/lao-tseu-is-alive/go-wmts-tool/pkg/wmts"
 )
 
 const (
@@ -30,6 +31,7 @@ const (
 	defaultMaxIdleConn         = 100
 	defaultMaxIdleConnPerHost  = 100
 	defaultIdleConnTimeoutSec  = 90
+	defaultBufferSize          = 50
 	formatTraceRequest         = "[%s] %s '%s', IP: [%s],%s\n"
 )
 
@@ -88,7 +90,8 @@ func GetLayersInfoHandler(layers map[string]wmts.LayerConfig, l golog.MyLogger) 
 
 func getTileInfoByXYHandler(chGrid *wmts.Grid, layers map[string]wmts.LayerConfig, l golog.MyLogger) http.HandlerFunc {
 	handlerName := "getTileInfoByXYHandler"
-	l.Debug("Initial call to %s", handlerName)
+	buffer := config.GetBufferSizeFromEnvOrPanic(defaultBufferSize)
+	l.Debug("Initial call to %s, buffer size: %d", handlerName, buffer)
 	return func(w http.ResponseWriter, r *http.Request) {
 		l.Debug(formatTraceRequest, handlerName, r.Method, r.URL.Path, r.RemoteAddr, "")
 		// 1. Get parameters using r.PathValue().  MUCH cleaner!
@@ -136,7 +139,7 @@ func getTileInfoByXYHandler(chGrid *wmts.Grid, layers map[string]wmts.LayerConfi
 		}
 		layers := layerConfig.WMSLayers
 
-		params := chGrid.GetWMSParams(*bbox, layers, int(chGrid.GetTileWidth()), int(chGrid.GetTileHeight()), "png") // Use GetTileWidth
+		params := chGrid.GetWMSParams(*bbox, layers, int(chGrid.GetTileWidth()), int(chGrid.GetTileHeight()), buffer, "png") // Use GetTileWidth
 
 		// 5. Build the WMS URL.
 		wmsURL := fmt.Sprintf("%s?%s%s", chGrid.WmsBackendUrl, chGrid.WmsStartParams, tools.BuildQueryString(params))
@@ -163,7 +166,8 @@ func getTileInfoByXYHandler(chGrid *wmts.Grid, layers map[string]wmts.LayerConfi
 
 func getTileImageHandler(chGrid *wmts.Grid, layers map[string]wmts.LayerConfig, basePath string, l golog.MyLogger) http.HandlerFunc {
 	handlerName := "getTileImageHandler"
-	l.Debug("Initial call to %s", handlerName)
+	buffer := config.GetBufferSizeFromEnvOrPanic(defaultBufferSize)
+	l.Debug("Initial call to %s, buffer size: %d", handlerName, buffer)
 	client := tools.CreateHTTPClient(defaultMaxClientTimeOutSec, defaultMaxIdleConn, defaultMaxIdleConnPerHost, defaultIdleConnTimeoutSec)
 	return func(w http.ResponseWriter, r *http.Request) {
 		l.Debug(formatTraceRequest, handlerName, r.Method, r.URL.Path, r.RemoteAddr, "")
@@ -210,7 +214,7 @@ func getTileImageHandler(chGrid *wmts.Grid, layers map[string]wmts.LayerConfig, 
 			return
 		}
 		layers := layerConfig.WMSLayers
-		params := chGrid.GetWMSParams(*bbox, layers, int(chGrid.GetTileWidth()), int(chGrid.GetTileHeight()), "png") // Use GetTileWidth
+		params := chGrid.GetWMSParams(*bbox, layers, int(chGrid.GetTileWidth()), int(chGrid.GetTileHeight()), buffer, "png") // Use GetTileWidth
 
 		// 5. Build the WMS URL.
 		wmsURL := fmt.Sprintf("%s?%s%s", chGrid.WmsBackendUrl, chGrid.WmsStartParams, tools.BuildQueryString(params))
@@ -220,7 +224,7 @@ func getTileImageHandler(chGrid *wmts.Grid, layers map[string]wmts.LayerConfig, 
 		_, err = os.Stat(imgPath)
 		if err != nil {
 			l.Debug("file %s is not in cache, downloading: %s", imgPath, wmsURL)
-			err = tools.GetPngFromUrl(client, wmsURL, imgPath, 2)
+			err = tools.GetPngFromUrl(client, wmsURL, imgPath, buffer, 2, l)
 			if err != nil {
 				errMsg := fmt.Sprintf("error in GetPngFromUrl tile  zoom:%d, col:%d, row:%d", zoom, col, row)
 				l.Error(errMsg)
@@ -259,7 +263,7 @@ func getTileImageHandler(chGrid *wmts.Grid, layers map[string]wmts.LayerConfig, 
 }
 
 func main() {
-	l, err := golog.NewLogger("zap", golog.DebugLevel, version.APP)
+	l, err := golog.NewLogger("zap", golog.DebugLevel, fmt.Sprintf("%s ", version.APP))
 	if err != nil {
 		log.Fatalf("💥💥 error golog.NewLogger error: %v'\n", err)
 	}
@@ -287,7 +291,7 @@ func main() {
 	wmsStartParams := layers[firstLayer].WMSBackendPrefix
 
 	// Create a new grid
-	myGrid := wmts.CreateNewLausanneGridFromEnvOrFail(wmsBackEndUrl, wmsStartParams)
+	myGrid := wmts.CreateNewLausanneGridFromEnvOrFail(wmsBackEndUrl, wmsStartParams, l)
 
 	myVersionReader := gohttp.NewSimpleVersionReader(version.APP, version.VERSION, version.REPOSITORY, version.Build)
 	server := gohttp.CreateNewServerFromEnvOrFail(

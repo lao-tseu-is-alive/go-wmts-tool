@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/lao-tseu-is-alive/go-wmts-tool/pkg/golog"
 	"github.com/lao-tseu-is-alive/go-wmts-tool/pkg/imgTools"
 	"github.com/lao-tseu-is-alive/go-wmts-tool/pkg/tools"
 )
@@ -36,6 +37,7 @@ type Grid struct {
 
 	// resolutions is a map of zoom levels to their properties.
 	resolutions map[int]Resolution
+	l           golog.MyLogger
 }
 
 // GetTile calculates the tile indices (col, row) for a given coordinate and zoom level.
@@ -187,17 +189,17 @@ func (g *Grid) GetMaxNumCols(zoomLevel int) int {
 }
 
 // SaveTileImage get the wms request for a given tile and save the png file in the local cache path
-func (g *Grid) SaveTileImage(zoomLevel, tileCol, tileRow int, lc LayerConfig, basePath string, client *http.Client) (string, error) {
+func (g *Grid) SaveTileImage(zoomLevel, tileCol, tileRow, buffer int, lc LayerConfig, basePath string, client *http.Client) (string, error) {
 	bbox, err := g.GetTileBBox(zoomLevel, tileCol, tileRow)
 	if err != nil {
 		errMsg := fmt.Sprintf("error in GetTileBBox  zoom:%d, col:%d, row:%d", zoomLevel, tileCol, tileRow)
 		return errMsg, err
 	}
 	layers := lc.WMSLayers
-	params := g.GetWMSParams(*bbox, layers, int(g.GetTileWidth()), int(g.GetTileHeight()), "png") // Use GetTileWidth
+	params := g.GetWMSParams(*bbox, layers, int(g.GetTileWidth()), int(g.GetTileHeight()), buffer, "png") // Use GetTileWidth
 	wmsURL := fmt.Sprintf("%s?%s%s", g.WmsBackendUrl, g.WmsStartParams, tools.BuildQueryString(params))
 	imgPath := GetWmtsImgPath(basePath, lc.WMTSURLPrefix, lc.Name, lc.WMTSURLStyle, lc.WMTSDimensionYear, lc.WMTSMatrixSet, "png", zoomLevel, tileRow, tileCol)
-	err = tools.GetPngFromUrl(client, wmsURL, imgPath, 2)
+	err = tools.GetPngFromUrl(client, wmsURL, imgPath, buffer, 2, g.l)
 	if err != nil {
 		errMsg := fmt.Sprintf("error in GetPngFromUrl tile  zoom:%d, col:%d, row:%d", zoomLevel, tileCol, tileRow)
 		return errMsg, err
@@ -206,12 +208,12 @@ func (g *Grid) SaveTileImage(zoomLevel, tileCol, tileRow int, lc LayerConfig, ba
 }
 
 // GetTileWmsUrl returns the WMS URL for a given tile.
-func (g *Grid) GetTileWmsUrl(zoomLevel, tileCol, tileRow int, layers string) (string, error) {
+func (g *Grid) GetTileWmsUrl(zoomLevel, tileCol, tileRow, buffer int, layers string) (string, error) {
 	bbox, err := g.GetTileBBox(zoomLevel, tileCol, tileRow)
 	if err != nil {
 		return "", err
 	}
-	params := g.GetWMSParams(*bbox, layers, int(g.GetTileWidth()), int(g.GetTileHeight()), "png")
+	params := g.GetWMSParams(*bbox, layers, int(g.GetTileWidth()), int(g.GetTileHeight()), buffer, "png")
 	wmsURL := fmt.Sprintf("%s?%s%s", g.WmsBackendUrl, g.WmsStartParams, tools.BuildQueryString(params))
 	return wmsURL, nil
 }
@@ -219,7 +221,7 @@ func (g *Grid) GetTileWmsUrl(zoomLevel, tileCol, tileRow int, layers string) (st
 // SaveTilesFromMetaTile fetches a larger image (a "meta-tile") from the WMS server,
 // splits it into individual tiles, and saves them to the local cache.
 // This approach reduces the number of HTTP requests, improving performance.
-func (g *Grid) SaveTilesFromMetaTile(zoomLevel, startCol, startRow, numCols, numRows int, lc LayerConfig, basePath string, client *http.Client) error {
+func (g *Grid) SaveTilesFromMetaTile(zoomLevel, startCol, startRow, numCols, numRows, buffer int, lc LayerConfig, basePath string, client *http.Client) error {
 	// 1. Calculate the bounding box for the entire meta-tile.
 	// BBox of the top-left tile
 	topLeftBBox, err := g.GetTileBBox(zoomLevel, startCol, startRow)
@@ -244,7 +246,7 @@ func (g *Grid) SaveTilesFromMetaTile(zoomLevel, startCol, startRow, numCols, num
 	// 2. Make a single WMS request for the entire meta-tile.
 	metaTileWidth := int(g.GetTileWidth()) * numCols
 	metaTileHeight := int(g.GetTileHeight()) * numRows
-	params := g.GetWMSParams(*metaBBox, lc.WMSLayers, metaTileWidth, metaTileHeight, "png")
+	params := g.GetWMSParams(*metaBBox, lc.WMSLayers, metaTileWidth, metaTileHeight, buffer, "png")
 	wmsURL := fmt.Sprintf("%s?%s%s", g.WmsBackendUrl, g.WmsStartParams, tools.BuildQueryString(params))
 
 	resp, err := client.Get(wmsURL)
@@ -258,7 +260,7 @@ func (g *Grid) SaveTilesFromMetaTile(zoomLevel, startCol, startRow, numCols, num
 	}
 
 	// Decode the image from the response body.
-	img, _, err := image.Decode(resp.Body)
+	bufferedImage, _, err := image.Decode(resp.Body)
 	if err != nil {
 		return fmt.Errorf("failed to decode meta-tile image: %w", err)
 	}
@@ -266,6 +268,7 @@ func (g *Grid) SaveTilesFromMetaTile(zoomLevel, startCol, startRow, numCols, num
 	// 3. Split the meta-tile image into individual tiles.
 	tileWidth := int(g.GetTileWidth())
 	tileHeight := int(g.GetTileHeight())
+	img := imgTools.CropImage(bufferedImage, buffer, g.l)
 	tiles, err := imgTools.SplitImage(img, tileWidth, tileHeight)
 	if err != nil {
 		return fmt.Errorf("failed to split meta-tile image: %w", err)
