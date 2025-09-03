@@ -31,6 +31,7 @@ func (g *Grid) GetWMSParams(bbox BBox, layers string, width, height int, imageFo
 		"CRS":         "EPSG:2056",
 		"STYLES":      "",
 		"BBOX":        bboxStr,
+		"BUFFER":      "500",
 	}
 
 	return params

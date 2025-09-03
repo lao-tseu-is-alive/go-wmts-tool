@@ -16,7 +16,6 @@ func NewLausanneGrid(wmsBackEndUrl, wmsStartParams string) *Grid {
 		TileSize:        256,
 		topLeftX:        2420000.0,
 		topLeftY:        1350000.0,
-		tileSize:        256,
 		WmsBackendUrl:   wmsBackEndUrl,
 		WmsStartParams:  wmsStartParams,
 		resolutions: map[int]Resolution{

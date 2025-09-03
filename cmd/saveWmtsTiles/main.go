@@ -3,13 +3,14 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log"
+	"sync"
+
 	"github.com/lao-tseu-is-alive/go-wmts-tool/pkg/golog"
 	"github.com/lao-tseu-is-alive/go-wmts-tool/pkg/tools"
 	"github.com/lao-tseu-is-alive/go-wmts-tool/pkg/version"
 	"github.com/lao-tseu-is-alive/go-wmts-tool/pkg/wmts"
 	"github.com/schollz/progressbar/v3"
-	"log"
-	"sync"
 )
 
 // saveWmtsTiles allows saving all png tiles for a given zoom level and layer
@@ -24,7 +25,7 @@ const (
 	defaultMaxIdleConnPerHost  = 100
 	defaultIdleConnTimeoutSec  = 90
 	defaultNumWorkers          = 4 // Default number of workers
-	metaTileSize               = 4 // Number of tiles per side in a meta-tile (e.g., 2 for a 2x2 meta-tile)
+	defaultMetaTileSize        = 4 // Number of tiles per side in a meta-tile (e.g., 2 for a 2x2 meta-tile)
 )
 
 // metaTileTask defines a task to process a meta-tile.
@@ -46,6 +47,8 @@ func main() {
 	layerName := flag.String("layer", defaultLayer, "config file name")
 	zoomLevel := flag.Int("zoom", defaultZoomLevel, "zoom level")
 	numWorkers := flag.Int("workers", defaultNumWorkers, "number of worker goroutines")
+	ptrMetaTileSize := flag.Int("metatile", defaultMetaTileSize, "number of tiles size per request(e.g. 2 for a 2x2 meta-tile) default is 4 ")
+	metaTileSize := *ptrMetaTileSize
 	flag.Parse()
 
 	l.Info("ℹ️ Using zoom level : %d", *zoomLevel)

@@ -24,8 +24,8 @@ func (g *Grid) GetTileInfoByXY(x, y, zoomLevel int) (*TileInfo, error) {
 	resolution := zoomInfo.CellSize
 
 	// Calculate the tile column and row.
-	tileCol := int((float64(x) - g.topLeftX) / (g.tileSize * resolution))
-	tileRow := int((g.topLeftY - float64(y)) / (g.tileSize * resolution))
+	tileCol := int((float64(x) - g.topLeftX) / (g.TileSize * resolution))
+	tileRow := int((g.topLeftY - float64(y)) / (g.TileSize * resolution))
 
 	// Check if the tile indices are valid.
 	if !g.IsValidTile(zoomLevel, tileCol, tileRow) {

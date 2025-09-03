@@ -2,14 +2,15 @@ package wmts
 
 import (
 	"fmt"
-	"github.com/lao-tseu-is-alive/go-wmts-tool/pkg/imgTools"
-	"github.com/lao-tseu-is-alive/go-wmts-tool/pkg/tools"
 	"image"
 	"image/png"
 	"math"
 	"net/http"
 	"os"
 	"path/filepath"
+
+	"github.com/lao-tseu-is-alive/go-wmts-tool/pkg/imgTools"
+	"github.com/lao-tseu-is-alive/go-wmts-tool/pkg/tools"
 )
 
 // Resolution defines the properties for a WMTS grid zoom level.
@@ -30,7 +31,6 @@ type Grid struct {
 	TileSize        float64 // Tile size in pixels
 	topLeftX        float64 // top-left corner X in LV95 (EPSG:2056)
 	topLeftY        float64 // top-left corner Y in LV95 (EPSG:2056)
-	tileSize        float64 // Tile size in pixels
 	WmsBackendUrl   string
 	WmsStartParams  string
 
@@ -47,8 +47,8 @@ func (g *Grid) GetTile(coordX, coordY float64, zoomLevel int) (int, int, error) 
 	zoomInfo := g.resolutions[zoomLevel]
 	resolution := zoomInfo.CellSize
 
-	tileCol := int((coordX - g.topLeftX) / (g.tileSize * resolution))
-	tileRow := int((g.topLeftY - coordY) / (g.tileSize * resolution))
+	tileCol := int((coordX - g.topLeftX) / (g.TileSize * resolution))
+	tileRow := int((g.topLeftY - coordY) / (g.TileSize * resolution))
 
 	return tileCol, tileRow, nil
 }
@@ -118,10 +118,10 @@ func (g *Grid) GetTileBBox(zoomLevel, tileCol, tileRow int) (*BBox, error) {
 
 	zoomInfo := g.resolutions[zoomLevel]
 	resolution := zoomInfo.CellSize
-	xMin := g.topLeftX + float64(tileCol)*g.tileSize*resolution
-	yMax := g.topLeftY - float64(tileRow)*g.tileSize*resolution
-	xMax := xMin + g.tileSize*resolution
-	yMin := yMax - g.tileSize*resolution
+	xMin := g.topLeftX + float64(tileCol)*g.TileSize*resolution
+	yMax := g.topLeftY - float64(tileRow)*g.TileSize*resolution
+	xMax := xMin + g.TileSize*resolution
+	yMin := yMax - g.TileSize*resolution
 	bb, err := NewBBox(xMin, yMin, xMax, yMax)
 	if err != nil {
 		return nil, err
@@ -136,12 +136,12 @@ func (g *Grid) GetBBox() BBox {
 
 // GetTileWidth returns the width of a tile in meters.
 func (g *Grid) GetTileWidth() float64 {
-	return g.tileSize * float64(g.MetersPerUnit)
+	return g.TileSize * float64(g.MetersPerUnit)
 }
 
 // GetTileHeight returns the height of a tile in meters.
 func (g *Grid) GetTileHeight() float64 {
-	return g.tileSize * float64(g.MetersPerUnit)
+	return g.TileSize * float64(g.MetersPerUnit)
 }
 
 // GetHeight returns the total height of the grid in meters.
@@ -167,7 +167,7 @@ func (g *Grid) GetMaxNumRows(zoomLevel int) int {
 	if cellSize == 0 {
 		panic(fmt.Sprintf("cellSize was not found for zoom_level %d", zoomLevel))
 	}
-	return int(math.Round(g.GetHeight() / (g.tileSize * cellSize)))
+	return int(math.Round(g.GetHeight() / (g.TileSize * cellSize)))
 }
 
 // GetMaxNumCols returns the maximum number of columns for a given zoom level.
@@ -183,7 +183,7 @@ func (g *Grid) GetMaxNumCols(zoomLevel int) int {
 	if cellSize == 0 {
 		panic(fmt.Sprintf("cellSize was not found for zoom_level %d", zoomLevel))
 	}
-	return int(math.Round(g.GetWidth() / (g.tileSize * cellSize)))
+	return int(math.Round(g.GetWidth() / (g.TileSize * cellSize)))
 }
 
 // SaveTileImage get the wms request for a given tile and save the png file in the local cache path
