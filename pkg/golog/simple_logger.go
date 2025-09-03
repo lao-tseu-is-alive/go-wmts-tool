@@ -3,6 +3,7 @@ package golog
 import (
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
 )
@@ -36,8 +37,8 @@ type SimpleLogger struct {
 	maxLevel Level
 }
 
-func NewSimpleLogger(logLevel Level, prefix string) (MyLogger, error) {
-	l := log.New(os.Stdout, prefix, log.Ldate|log.Ltime|log.Llongfile)
+func NewSimpleLogger(out io.Writer, logLevel Level, prefix string) (MyLogger, error) {
+	l := log.New(out, prefix, log.Ldate|log.Ltime|log.Lshortfile)
 	return &SimpleLogger{logger: l, maxLevel: logLevel}, nil
 }
 
@@ -47,25 +48,25 @@ func (l *SimpleLogger) Debug(msg string, v ...any) {
 	}
 }
 
-func (l *SimpleLogger) Info(msg string, v ...interface{}) {
+func (l *SimpleLogger) Info(msg string, v ...any) {
 	if l.maxLevel <= InfoLevel {
 		l.logger.Output(2, fmt.Sprintf("%s 📣 INFO : %s%s", whiteHighIntensity, fmt.Sprintf(msg, v...), reset))
 	}
 }
 
-func (l *SimpleLogger) Warn(msg string, v ...interface{}) {
+func (l *SimpleLogger) Warn(msg string, v ...any) {
 	if l.maxLevel <= WarnLevel {
 		l.logger.Output(2, fmt.Sprintf("%s 🚩 WARN : %s%s", yellowHighIntensity, fmt.Sprintf(msg, v...), reset))
 	}
 }
 
-func (l *SimpleLogger) Error(msg string, v ...interface{}) {
+func (l *SimpleLogger) Error(msg string, v ...any) {
 	if l.maxLevel <= ErrorLevel {
 		l.logger.Output(2, fmt.Sprintf("%s ⚠️ ⚡ ERROR: %s%s", redBackGroundWhiteText, fmt.Sprintf(msg, v...), reset))
 	}
 }
 
-func (l *SimpleLogger) Fatal(msg string, v ...interface{}) {
+func (l *SimpleLogger) Fatal(msg string, v ...any) {
 	l.logger.Output(2, fmt.Sprintf("%s💥 💥 FATAL: %s%s", redBackGroundYellowText, fmt.Sprintf(msg, v...), reset))
 	os.Exit(1)
 }

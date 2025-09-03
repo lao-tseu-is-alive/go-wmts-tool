@@ -4,12 +4,13 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
-	"io"
 	"io/fs"
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
+	"time"
 
 	"github.com/lao-tseu-is-alive/go-wmts-tool/pkg/config"
 	"github.com/lao-tseu-is-alive/go-wmts-tool/pkg/gohttp"
@@ -25,14 +26,13 @@ const (
 	defaultWebRootDir          = "wmtsProxyFront/dist/"
 	defaultWmtsUrlPrefix       = "tiles/1.0.0"
 	defaultWmtsUrlStyle        = "default"
-	defaultWmtsUrlYear         = "2021"
-	defaultWmtsMatrixSet       = "swissgrid_05"
 	defaultMaxClientTimeOutSec = 10
 	defaultMaxIdleConn         = 100
 	defaultMaxIdleConnPerHost  = 100
 	defaultIdleConnTimeoutSec  = 90
 	defaultBufferSize          = 50
 	formatTraceRequest         = "[%s] %s '%s', IP: [%s],%s\n"
+	defaultLogName             = "stderr"
 )
 
 type TileInfoResponse struct {
@@ -47,6 +47,55 @@ type TileInfoResponse struct {
 //
 //go:embed all:wmtsProxyFront/dist
 var content embed.FS
+
+// Extract parameter parsing to a separate function for better readability
+func parseTileInfoByXYParams(r *http.Request) (layer string, zoom int, x, y float64, err error) {
+	// 1. Get parameters using r.PathValue().  MUCH cleaner!
+	layer = r.PathValue("layer")
+	zoomStr := r.PathValue("zoom")
+	xStr := r.PathValue("x")
+	yStr := r.PathValue("y")
+
+	// 2. Convert parameters to the correct types, with error handling.
+	zoom, err = strconv.Atoi(zoomStr)
+	if err != nil {
+		return "", 0, 0, 0, fmt.Errorf("invalid zoom level: %w", err)
+	}
+	x, err = strconv.ParseFloat(xStr, 64)
+	if err != nil {
+		return "", 0, 0, 0, fmt.Errorf("invalid x coordinate: %w", err)
+	}
+	y, err = strconv.ParseFloat(yStr, 64)
+	if err != nil {
+		return "", 0, 0, 0, fmt.Errorf("invalid y coordinate: %w", err)
+	}
+
+	return layer, zoom, x, y, nil
+}
+
+func parseTileParams(r *http.Request) (layer string, zoom, col, row int, err error) {
+	layer = r.PathValue("layer")
+	zoomStr := r.PathValue("zoom")
+	colStr := r.PathValue("col")
+	rowStr := r.PathValue("row")
+
+	zoom, err = strconv.Atoi(zoomStr)
+	if err != nil {
+		return "", 0, 0, 0, fmt.Errorf("invalid zoom level: %w", err)
+	}
+
+	col, err = strconv.Atoi(colStr)
+	if err != nil {
+		return "", 0, 0, 0, fmt.Errorf("invalid column: %w", err)
+	}
+
+	row, err = strconv.Atoi(rowStr)
+	if err != nil {
+		return "", 0, 0, 0, fmt.Errorf("invalid row: %w", err)
+	}
+
+	return layer, zoom, col, row, nil
+}
 
 func GetMyDefaultHandler(s *gohttp.Server, webRootDir string, content embed.FS) http.HandlerFunc {
 	handlerName := "GetMyDefaultHandler"
@@ -94,33 +143,19 @@ func getTileInfoByXYHandler(chGrid *wmts.Grid, layers map[string]wmts.LayerConfi
 	l.Debug("Initial call to %s, buffer size: %d", handlerName, buffer)
 	return func(w http.ResponseWriter, r *http.Request) {
 		l.Debug(formatTraceRequest, handlerName, r.Method, r.URL.Path, r.RemoteAddr, "")
-		// 1. Get parameters using r.PathValue().  MUCH cleaner!
-		layerStr := r.PathValue("layer")
-		zoomStr := r.PathValue("zoom")
-		xStr := r.PathValue("x")
-		yStr := r.PathValue("y")
-
-		// 2. Convert parameters to the correct types, with error handling.
-		zoom, err := strconv.Atoi(zoomStr)
+		layer, zoom, x, y, err := parseTileInfoByXYParams(r)
 		if err != nil {
-			http.Error(w, "Invalid zoom level", http.StatusBadRequest)
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		x, err := strconv.ParseFloat(xStr, 64)
-		if err != nil {
-			http.Error(w, "Invalid x coordinate", http.StatusBadRequest)
-			return
-		}
-		y, err := strconv.ParseFloat(yStr, 64)
-		if err != nil {
-			http.Error(w, "Invalid y coordinate", http.StatusBadRequest)
-			return
-		}
+		l.Info("getTileInfoByXYHandler: layer:%s, zoom:%d, x:%f, y:%f", layer, zoom, x, y)
 
 		// Look up layer config
-		layerConfig, exists := layers[layerStr]
+		layerConfig, exists := layers[layer]
 		if !exists {
-			l.Error("invalid layer request: %s", layerStr)
+			l.Error("invalid layer request: %s", layer)
+			// Maybe try using structured logging if logger supports it:
+			// l.Error("invalid layer request", "layer", layer, "remote_addr", r.RemoteAddr)
 			http.Error(w, "Invalid layer", http.StatusBadRequest)
 			return
 		}
@@ -171,31 +206,16 @@ func getTileImageHandler(chGrid *wmts.Grid, layers map[string]wmts.LayerConfig, 
 	client := tools.CreateHTTPClient(defaultMaxClientTimeOutSec, defaultMaxIdleConn, defaultMaxIdleConnPerHost, defaultIdleConnTimeoutSec)
 	return func(w http.ResponseWriter, r *http.Request) {
 		l.Debug(formatTraceRequest, handlerName, r.Method, r.URL.Path, r.RemoteAddr, "")
-		// 1. Get parameters using r.PathValue().  MUCH cleaner!
-		layerStr := r.PathValue("layer")
-		zoomStr := r.PathValue("zoom")
-		colStr := r.PathValue("col")
-		rowStr := r.PathValue("row")
-		// 2. Convert parameters to the correct types, with error handling.
-		zoom, err := strconv.Atoi(zoomStr)
+		layer, zoom, col, row, err := parseTileParams(r)
 		if err != nil {
-			http.Error(w, "Invalid zoom level", http.StatusBadRequest)
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		col, err := strconv.Atoi(colStr)
-		if err != nil {
-			http.Error(w, "Invalid column", http.StatusBadRequest)
-			return
-		}
-		row, err := strconv.Atoi(rowStr)
-		if err != nil {
-			http.Error(w, "Invalid row", http.StatusBadRequest)
-			return
-		}
+		l.Info("getTileImageHandler: layer:%s, zoom:%d, col:%d, row:%d", layer, zoom, col, row)
 		// Look up layer config
-		layerConfig, exists := layers[layerStr]
+		layerConfig, exists := layers[layer]
 		if !exists {
-			l.Error("invalid layer request: %s", layerStr)
+			l.Error("invalid layer request: %s", layer)
 			http.Error(w, "Invalid layer", http.StatusBadRequest)
 			return
 		}
@@ -242,28 +262,31 @@ func getTileImageHandler(chGrid *wmts.Grid, layers map[string]wmts.LayerConfig, 
 			return
 		}
 		defer file.Close()
-		// get the size of the file to add content-length header
-		fileInfo, err := file.Stat()
-		if err != nil {
-			errMsg := fmt.Sprintf("error %v, doing file.Stat : %s", err, imgPath)
-			l.Error(errMsg)
-			http.Error(w, errMsg, http.StatusInternalServerError)
-			return
-		}
-		// return the correct content type header for the image
-		w.Header().Set("Content-Type", "image/png")
-		w.Header().Set("Content-Length", strconv.FormatInt(fileInfo.Size(), 10))
-		// write the img to the response
-		_, err = io.Copy(w, file)
-		if err != nil {
-			http.Error(w, "Error reading png img", http.StatusInternalServerError)
-			return
-		}
+		// Using http.ServeContent to efficiently serve the file content.
+		// This function handles a number of important HTTP features automatically:
+		// - Caching: It supports `If-Modified-Since` and `If-None-Match` headers,
+		//   allowing the browser to use a cached version of the file and
+		//   avoiding unnecessary data transfer.
+		// - Range Requests: It correctly handles `Range` headers, which allows
+		//   clients to request specific portions of the file.
+		// - Content Headers: It sets the correct `Content-Type` and `Content-Length` headers
+		//   for the response.
+		//
+		// We pass a `time.Now()` as the `modtime` because the file is dynamically generated
+		// and we want to prevent clients from caching it for too long, as its content
+		// might change in the future.
+		http.ServeContent(w, r, filepath.Base(imgPath), time.Now(), file)
+
 	}
 }
 
 func main() {
-	l, err := golog.NewLogger("zap", golog.DebugLevel, fmt.Sprintf("%s ", version.APP))
+	l, err := golog.NewLogger(
+		"simple",
+		config.GetLogWriterFromEnvOrPanic(defaultLogName),
+		config.GetLogLevelFromEnvOrPanic(golog.InfoLevel),
+		fmt.Sprintf("%s:", version.APP),
+	)
 	if err != nil {
 		log.Fatalf("💥💥 error golog.NewLogger error: %v'\n", err)
 	}

@@ -8,13 +8,13 @@ import (
 // GetWMSParams generates a map of WMS parameters based on the provided inputs.
 func (g *Grid) GetWMSParams(bbox BBox, layers string, width, height, buffer int, imageFormat string) map[string]string {
 	if width <= 0 {
-		width = 256
+		width = DefaultTileSize
 	}
 	if height <= 0 {
-		height = 256
+		height = DefaultTileSize
 	}
 	if imageFormat == "" {
-		imageFormat = "png"
+		imageFormat = DefaultImageFormat
 	}
 	// The BBOX needs to be expanded to account for the buffer.
 	// We'll calculate the new BBox based on the resolution.
@@ -33,12 +33,12 @@ func (g *Grid) GetWMSParams(bbox BBox, layers string, width, height, buffer int,
 		"VERSION":     "1.3.0",
 		"REQUEST":     "GetMap",
 		"FORMAT":      fmt.Sprintf("image/%s", imageFormat),
-		"TRANSPARENT": strconv.FormatBool(imageFormat == "png"), // "true" if png, "false" otherwise
+		"TRANSPARENT": strconv.FormatBool(imageFormat == DefaultImageFormat), // "true" if png, "false" otherwise
 		"LAYERS":      layers,
 		// The width and height must also be increased
 		"WIDTH":  fmt.Sprintf("%d", width+(buffer*2)),
 		"HEIGHT": fmt.Sprintf("%d", height+(buffer*2)),
-		"CRS":    "EPSG:2056",
+		"CRS":    fmt.Sprintf("EPSG:%d", DefaultSpatialRef),
 		"STYLES": "",
 		"BBOX":   bufferedBbox.String(),
 	}

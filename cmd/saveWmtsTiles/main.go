@@ -28,6 +28,7 @@ const (
 	defaultNumWorkers          = 4 // Default number of workers
 	defaultMetaTileSize        = 4 // Number of tiles per side in a meta-tile (e.g., 2 for a 2x2 meta-tile)
 	defaultBufferSize          = 50
+	defaultLogName             = "stderr"
 )
 
 // metaTileTask defines a task to process a meta-tile.
@@ -38,7 +39,12 @@ type metaTileTask struct {
 }
 
 func main() {
-	l, err := golog.NewLogger("zap", golog.DebugLevel, fmt.Sprintf("%s:", APP))
+	l, err := golog.NewLogger(
+		"simple",
+		config.GetLogWriterFromEnvOrPanic(defaultLogName),
+		config.GetLogLevelFromEnvOrPanic(golog.WarnLevel),
+		fmt.Sprintf("%s:", APP),
+	)
 	if err != nil {
 		log.Fatalf("💥💥 error golog.NewLogger error: %v'\n", err)
 	}
