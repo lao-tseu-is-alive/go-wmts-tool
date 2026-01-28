@@ -21,7 +21,7 @@ const (
 	defaultWmtsConfig          = "wmtsConfig.yaml"
 	defaultLayer               = "fonds_geo_osm_bdcad_couleur"
 	defaultZoomLevel           = 3
-	defaultMaxClientTimeOutSec = 20
+	defaultMaxClientTimeOutSec = 30
 	defaultMaxIdleConn         = 100
 	defaultMaxIdleConnPerHost  = 100
 	defaultIdleConnTimeoutSec  = 90
