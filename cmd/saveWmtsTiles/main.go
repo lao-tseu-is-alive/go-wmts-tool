@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"sync"
 
 	"github.com/lao-tseu-is-alive/go-wmts-tool/pkg/config"
@@ -61,10 +62,20 @@ func main() {
 	// command line override
 	ptrBuffer := flag.Int("buffer", bufferFromEnv, "buffer in pixel around  tiles (default is 50)")
 	buffer := *ptrBuffer
+
+	// New parameters
+	clientTimeOut := flag.Int("ClientTimeOut", defaultMaxClientTimeOutSec, "client timeout in seconds")
+	minZoom := flag.Int("minZoom", defaultZoomLevel, "min zoom level")
+	maxZoom := flag.Int("maxZoom", defaultZoomLevel+1, "max zoom level")
+
 	flag.Parse()
 
-	l.Info("ℹ️ Using zoom level : %d", *zoomLevel)
-	l.Info("ℹ️ Using layer : %s", *layerName)
+	// Capture explicitly set flags
+	flagsSet := make(map[string]bool)
+	flag.Visit(func(f *flag.Flag) {
+		flagsSet[f.Name] = true
+	})
+
 	l.Info("ℹ️ Reading config file: %s", *configFileName)
 	config, err := wmts.ConfigFromYAML(*configFileName)
 	if err != nil {
@@ -100,24 +111,76 @@ func main() {
 
 	// Create a new grid
 	myGrid := wmts.CreateNewLausanneGridFromEnvOrFail(wmsBackEndUrl, wmsStartParams, l)
-	// Get tile boundaries
-	minCol, maxRow, err := myGrid.GetTile(xMin, yMin, *zoomLevel)
-	if err != nil {
-		l.Fatal("💥💥 GetTile(%f, %f, %d) got error: %v", xMin, yMin, *zoomLevel, err)
+
+	client := tools.CreateHTTPClient(*clientTimeOut, defaultMaxIdleConn, defaultMaxIdleConnPerHost, defaultIdleConnTimeoutSec)
+
+	var zoomsToProcess []int
+
+	// Logic to handle zoom parameters
+	if flagsSet["minZoom"] && flagsSet["maxZoom"] {
+		if flagsSet["zoom"] {
+			l.Warn("Warning: zoomLevel parameter is ignored because minZoom and maxZoom are provided")
+		}
+		// Validate and add range
+		start := *minZoom
+		end := *maxZoom
+		l.Info("ℹ️ Range requested: %d to %d (Grid Min: %d, Max: %d)", start, end, myGrid.MinZoom(), myGrid.MaxZoom())
+
+		for z := start; z <= end; z++ {
+			if z < myGrid.MinZoom() || z > myGrid.MaxZoom() {
+				l.Warn("Skipping zoom level %d: outside of grid capabilities [%d, %d]", z, myGrid.MinZoom(), myGrid.MaxZoom())
+				continue
+			}
+			zoomsToProcess = append(zoomsToProcess, z)
+		}
+	} else {
+		// Default or direct zoom usage
+		// "if no one of the 3 ... are given we work like now" -> yes, defaults.
+		l.Info("ℹ️ Single zoom level requested: %d", *zoomLevel)
+		zoomsToProcess = append(zoomsToProcess, *zoomLevel)
 	}
-	maxCol, minRow, err := myGrid.GetTile(xMax, yMax, *zoomLevel)
+
+	for _, z := range zoomsToProcess {
+		l.Info("=======================================================================")
+		l.Info("🚀 Processing Zoom Level: %d", z)
+		l.Info("=======================================================================")
+		processZoomLevel(z, *layerName, myGrid, xMin, yMin, xMax, yMax, metaTileSize, buffer, layerConfig, basePath, client, *numWorkers, *verbose, l)
+	}
+
+	l.Info("🏁 All requested operations completed.")
+}
+
+func processZoomLevel(
+	zoomLevel int,
+	layerName string,
+	myGrid *wmts.Grid,
+	xMin, yMin, xMax, yMax float64,
+	metaTileSize int,
+	buffer int,
+	layerConfig wmts.LayerConfig,
+	basePath string,
+	client *http.Client,
+	numWorkers int,
+	verbose bool,
+	l golog.MyLogger,
+) {
+	// Get tile boundaries
+	minCol, maxRow, err := myGrid.GetTile(xMin, yMin, zoomLevel)
 	if err != nil {
-		l.Fatal("💥💥 GetTile(%f, %f, %d) got error: %v", xMax, yMax, *zoomLevel, err)
+		l.Fatal("💥💥 GetTile(%f, %f, %d) got error: %v", xMin, yMin, zoomLevel, err)
+	}
+	maxCol, minRow, err := myGrid.GetTile(xMax, yMax, zoomLevel)
+	if err != nil {
+		l.Fatal("💥💥 GetTile(%f, %f, %d) got error: %v", xMax, yMax, zoomLevel, err)
 	}
 	l.Info("ℹ️ minCol: %d, minRow: %d", minCol, minRow)
 	l.Info("ℹ️ maxCol: %d, maxRow: %d", maxCol, maxRow)
 
-	client := tools.CreateHTTPClient(defaultMaxClientTimeOutSec, defaultMaxIdleConn, defaultMaxIdleConnPerHost, defaultIdleConnTimeoutSec)
 	// Calculate total tiles
 	totalTiles := (maxCol - minCol + 1) * (maxRow - minRow + 1)
 
 	// Initialize progress bar
-	bar := progressbar.Default(int64(totalTiles), fmt.Sprintf("Processing tiles for layer %s, zoom %d", *layerName, *zoomLevel))
+	bar := progressbar.Default(int64(totalTiles), fmt.Sprintf("Processing tiles for layer %s, zoom %d", layerName, zoomLevel))
 
 	// Create a channel for tasks. The channel now holds metaTileTask.
 	tasks := make(chan metaTileTask, (totalTiles)/(metaTileSize*metaTileSize)+1)
@@ -127,16 +190,16 @@ func main() {
 	done := make(chan struct{}, totalTiles)
 
 	// Start a worker pool. Each worker now processes a meta-tile.
-	for i := 0; i < *numWorkers; i++ {
+	for i := 0; i < numWorkers; i++ {
 		wg.Add(1)
 		go func(workerID int) {
 			defer wg.Done()
 			for task := range tasks {
-				err := myGrid.SaveTilesFromMetaTile(task.zoomLevel, task.startCol, task.startRow, metaTileSize, metaTileSize, buffer, layers[*layerName], basePath, client)
+				err := myGrid.SaveTilesFromMetaTile(task.zoomLevel, task.startCol, task.startRow, metaTileSize, metaTileSize, buffer, layerConfig, basePath, client)
 				if err != nil {
 					l.Error("💥 Worker %d: SaveTilesFromMetaTile for zoom:%d, meta-tile at (row:%d, col:%d) failed: %v", workerID, task.zoomLevel, task.startRow, task.startCol, err)
 				} else {
-					if *verbose {
+					if verbose {
 						l.Info("ℹ️ Worker %d: zoom:%d, meta-tile at (row:%d, col:%d) saved", workerID, task.zoomLevel, task.startRow, task.startCol)
 					}
 					// Signal completion for each tile in the meta-tile
@@ -157,7 +220,7 @@ func main() {
 	// Enqueue meta-tile tasks
 	for row := minRow; row <= maxRow; row += metaTileSize {
 		for col := minCol; col <= maxCol; col += metaTileSize {
-			tasks <- metaTileTask{zoomLevel: *zoomLevel, startCol: col, startRow: row}
+			tasks <- metaTileTask{zoomLevel: zoomLevel, startCol: col, startRow: row}
 		}
 	}
 
@@ -167,5 +230,5 @@ func main() {
 	// Close done channel and wait for progress bar to finish
 	close(done)
 	bar.Finish()
-	l.Info("ℹ️ All tiles processed successfully")
+	l.Info("ℹ️ Zoom %d processed successfully", zoomLevel)
 }
