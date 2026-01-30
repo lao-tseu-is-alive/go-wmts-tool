@@ -294,7 +294,7 @@ func (g *Grid) SaveTilesFromMetaTile(zoomLevel, startCol, startRow, numCols, num
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("WMS request returned non-OK status: %d", resp.StatusCode)
+		return fmt.Errorf("WMS request returned non-OK status: %d for url : [%s]", resp.StatusCode, wmsURL)
 	}
 
 	// Decode the image from the response body.
