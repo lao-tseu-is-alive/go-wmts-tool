@@ -45,3 +45,14 @@ layers:
         empty_tile_detection_size: 116
         empty_tile_detection_md5_hash: 1e3da153be87a493c4c71198366485f290cad43c
         wmts_bbox: [2536481, 1155623, 2537035, 1156067]
+
+    orthophotos_ortho_spec_presdevidy_2025_10_16:
+        <<: *layer_default_values
+        wms_layers: orthophotos_ortho_spec_presdevidy_2025_10_16
+        layer_name: orthophotos_ortho_spec_presdevidy_2025_10_16
+        layer_title: Orthophoto Près-de-Vidy Octobre 2025
+        wmts_dimension_name: DATE
+        wmts_dimension_year: 2025
+        empty_tile_detection_size: 116
+        empty_tile_detection_md5_hash: 1e3da153be87a493c4c71198366485f290cad43c
+        wmts_bbox: [2534215, 1152010, 2535899, 1153639]
