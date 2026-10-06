@@ -1,11 +1,16 @@
 package main
 
 import (
+	"encoding/csv"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"os"
+	"strconv"
 	"sync"
+	"time"
 
 	"github.com/lao-tseu-is-alive/go-wmts-tool/pkg/config"
 	"github.com/lao-tseu-is-alive/go-wmts-tool/pkg/golog"
@@ -30,6 +35,9 @@ const (
 	defaultMetaTileSize        = 4 // Number of tiles per side in a meta-tile (e.g., 2 for a 2x2 meta-tile)
 	defaultBufferSize          = 50
 	defaultLogName             = "stderr"
+	defaultMaxTileAge          = 24 * time.Hour   // with -skipExisting, tiles older than this are fetched again
+	secondPassDelay            = 15 * time.Second // pause before retrying failed meta-tiles, to let the WMS server recover
+	failedFileHeader           = "layer,zoom,startCol,startRow,metaTileSize"
 )
 
 // metaTileTask defines a task to process a meta-tile.
@@ -37,6 +45,29 @@ type metaTileTask struct {
 	zoomLevel int
 	startCol  int
 	startRow  int
+	size      int // number of tiles per side of the meta-tile
+}
+
+// tileProcessor holds everything needed by the workers to process meta-tile tasks.
+type tileProcessor struct {
+	grid         *wmts.Grid
+	layerConfig  wmts.LayerConfig
+	basePath     string
+	buffer       int
+	maxRetries   int
+	client       *http.Client
+	numWorkers   int
+	skipExisting bool
+	maxTileAge   time.Duration
+	verbose      bool
+	l            golog.MyLogger
+}
+
+// passResult summarizes one pass of the worker pool over a list of meta-tile tasks.
+type passResult struct {
+	saved   int
+	skipped int
+	failed  []metaTileTask
 }
 
 func main() {
@@ -53,20 +84,21 @@ func main() {
 	// get the YAML config file name received from the config parameter
 	configFileName := flag.String("config", defaultWmtsConfig, "config file name")
 	verbose := flag.Bool("verbose", false, "verbose output")
-	layerName := flag.String("layer", defaultLayer, "config file name")
+	layerName := flag.String("layer", defaultLayer, "layer name in config file")
 	zoomLevel := flag.Int("zoom", defaultZoomLevel, "zoom level")
 	numWorkers := flag.Int("workers", defaultNumWorkers, "number of worker goroutines")
-	ptrMetaTileSize := flag.Int("metatile", defaultMetaTileSize, "number of tiles size per request(e.g. 2 for a 2x2 meta-tile) default is 4 ")
-	metaTileSize := *ptrMetaTileSize
+	metaTileSize := flag.Int("metatile", defaultMetaTileSize, "number of tiles size per request(e.g. 2 for a 2x2 meta-tile)")
 	bufferFromEnv := config.GetBufferSizeFromEnvOrPanic(defaultBufferSize)
 	// command line override
-	ptrBuffer := flag.Int("buffer", bufferFromEnv, "buffer in pixel around  tiles (default is 50)")
-	buffer := *ptrBuffer
-
-	// New parameters
+	buffer := flag.Int("buffer", bufferFromEnv, "buffer in pixel around tiles")
 	clientTimeOut := flag.Int("ClientTimeOut", defaultMaxClientTimeOutSec, "client timeout in seconds")
 	minZoom := flag.Int("minZoom", defaultZoomLevel, "min zoom level")
 	maxZoom := flag.Int("maxZoom", defaultZoomLevel+1, "max zoom level")
+	maxRetries := flag.Int("retries", tools.DefaultMaxRetries, "number of retries of a failed WMS request (with exponential backoff)")
+	skipExisting := flag.Bool("skipExisting", false, "skip meta-tiles whose tiles all exist locally and are younger than -maxTileAge")
+	maxTileAge := flag.Duration("maxTileAge", defaultMaxTileAge, "with -skipExisting, max age of an existing tile to be kept (e.g. 30m, 12h, 72h)")
+	retryFile := flag.String("retryFile", "", "only process the failed meta-tiles listed in this file (written by a previous run), zoom flags are ignored")
+	failedFile := flag.String("failedFile", "", "file where meta-tiles still failing at the end are written (default failed_<layer>_<timestamp>.csv)")
 
 	flag.Parse()
 
@@ -75,6 +107,28 @@ func main() {
 	flag.Visit(func(f *flag.Flag) {
 		flagsSet[f.Name] = true
 	})
+
+	if *numWorkers < 1 {
+		l.Fatal("💥💥 -workers must be >= 1, got %d", *numWorkers)
+	}
+	if *metaTileSize < 1 {
+		l.Fatal("💥💥 -metatile must be >= 1, got %d", *metaTileSize)
+	}
+	if *buffer < 0 || *buffer > 256 {
+		l.Fatal("💥💥 -buffer must be between 0 and 256, got %d", *buffer)
+	}
+	if *clientTimeOut < 1 {
+		l.Fatal("💥💥 -ClientTimeOut must be >= 1 second, got %d", *clientTimeOut)
+	}
+	if *maxRetries < 0 {
+		l.Fatal("💥💥 -retries must be >= 0, got %d", *maxRetries)
+	}
+	if *maxTileAge <= 0 {
+		l.Fatal("💥💥 -maxTileAge must be a positive duration, got %s", *maxTileAge)
+	}
+	if flagsSet["maxTileAge"] && !*skipExisting {
+		l.Warn("Warning: -maxTileAge is ignored without -skipExisting")
+	}
 
 	l.Info("ℹ️ Reading config file: %s", *configFileName)
 	config, err := wmts.ConfigFromYAML(*configFileName)
@@ -85,7 +139,7 @@ func main() {
 	layers := config.Layers
 	// Check if there are layers loaded
 	if len(layers) == 0 {
-		l.Fatal("💥💥 no layers loaded from %s", configFileName)
+		l.Fatal("💥💥 no layers loaded from %s", *configFileName)
 	}
 	l.Info("ℹ️ Found %d layers in config file: %s", len(layers), *configFileName)
 	isLayerNameInConfig := false
@@ -112,58 +166,87 @@ func main() {
 	// Create a new grid
 	myGrid := wmts.CreateNewLausanneGridFromEnvOrFail(wmsBackEndUrl, wmsStartParams, l)
 
-	client := tools.CreateHTTPClient(*clientTimeOut, defaultMaxIdleConn, defaultMaxIdleConnPerHost, defaultIdleConnTimeoutSec)
+	p := &tileProcessor{
+		grid:         myGrid,
+		layerConfig:  layerConfig,
+		basePath:     basePath,
+		buffer:       *buffer,
+		maxRetries:   *maxRetries,
+		client:       tools.CreateHTTPClient(*clientTimeOut, defaultMaxIdleConn, defaultMaxIdleConnPerHost, defaultIdleConnTimeoutSec),
+		numWorkers:   *numWorkers,
+		skipExisting: *skipExisting,
+		maxTileAge:   *maxTileAge,
+		verbose:      *verbose,
+		l:            l,
+	}
 
-	var zoomsToProcess []int
+	var stillFailing []metaTileTask
 
-	// Logic to handle zoom parameters
-	if flagsSet["minZoom"] && flagsSet["maxZoom"] {
-		if flagsSet["zoom"] {
-			l.Warn("Warning: zoomLevel parameter is ignored because minZoom and maxZoom are provided")
+	if *retryFile != "" {
+		if flagsSet["zoom"] || flagsSet["minZoom"] || flagsSet["maxZoom"] {
+			l.Warn("Warning: zoom parameters are ignored because -retryFile is provided")
 		}
-		// Validate and add range
-		start := *minZoom
-		end := *maxZoom
-		l.Info("ℹ️ Range requested: %d to %d (Grid Min: %d, Max: %d)", start, end, myGrid.MinZoom(), myGrid.MaxZoom())
-
-		for z := start; z <= end; z++ {
-			if z < myGrid.MinZoom() || z > myGrid.MaxZoom() {
-				l.Warn("Skipping zoom level %d: outside of grid capabilities [%d, %d]", z, myGrid.MinZoom(), myGrid.MaxZoom())
-				continue
-			}
-			zoomsToProcess = append(zoomsToProcess, z)
+		tasks, err := readFailedFile(*retryFile, *layerName)
+		if err != nil {
+			l.Fatal("💥💥 cannot read retry file: %v", err)
 		}
+		l.Info("ℹ️ %d meta-tiles to retry from %s", len(tasks), *retryFile)
+		stillFailing = p.processTasks(fmt.Sprintf("Retrying failed tiles for layer %s from %s", *layerName, *retryFile), tasks)
 	} else {
-		// Default or direct zoom usage
-		// "if no one of the 3 ... are given we work like now" -> yes, defaults.
-		l.Info("ℹ️ Single zoom level requested: %d", *zoomLevel)
-		zoomsToProcess = append(zoomsToProcess, *zoomLevel)
+		var zoomsToProcess []int
+
+		// Logic to handle zoom parameters
+		if flagsSet["minZoom"] && flagsSet["maxZoom"] {
+			if flagsSet["zoom"] {
+				l.Warn("Warning: zoomLevel parameter is ignored because minZoom and maxZoom are provided")
+			}
+			// Validate and add range
+			start := *minZoom
+			end := *maxZoom
+			l.Info("ℹ️ Range requested: %d to %d (Grid Min: %d, Max: %d)", start, end, myGrid.MinZoom(), myGrid.MaxZoom())
+
+			for z := start; z <= end; z++ {
+				if z < myGrid.MinZoom() || z > myGrid.MaxZoom() {
+					l.Warn("Skipping zoom level %d: outside of grid capabilities [%d, %d]", z, myGrid.MinZoom(), myGrid.MaxZoom())
+					continue
+				}
+				zoomsToProcess = append(zoomsToProcess, z)
+			}
+		} else {
+			// Default or direct zoom usage
+			// "if no one of the 3 ... are given we work like now" -> yes, defaults.
+			l.Info("ℹ️ Single zoom level requested: %d", *zoomLevel)
+			zoomsToProcess = append(zoomsToProcess, *zoomLevel)
+		}
+
+		for _, z := range zoomsToProcess {
+			l.Info("=======================================================================")
+			l.Info("🚀 Processing Zoom Level: %d", z)
+			l.Info("=======================================================================")
+			tasks := zoomLevelTasks(myGrid, z, xMin, yMin, xMax, yMax, *metaTileSize, l)
+			failed := p.processTasks(fmt.Sprintf("Processing tiles for layer %s, zoom %d", *layerName, z), tasks)
+			stillFailing = append(stillFailing, failed...)
+		}
 	}
 
-	for _, z := range zoomsToProcess {
-		l.Info("=======================================================================")
-		l.Info("🚀 Processing Zoom Level: %d", z)
-		l.Info("=======================================================================")
-		processZoomLevel(z, *layerName, myGrid, xMin, yMin, xMax, yMax, metaTileSize, buffer, layerConfig, basePath, client, *numWorkers, *verbose, l)
+	if len(stillFailing) > 0 {
+		fileName := *failedFile
+		if fileName == "" {
+			fileName = fmt.Sprintf("failed_%s_%s.csv", *layerName, time.Now().Format("20060102-150405"))
+		}
+		if err := writeFailedFile(fileName, *layerName, stillFailing); err != nil {
+			l.Error("💥💥 cannot write the list of failed meta-tiles: %v", err)
+		} else {
+			fmt.Fprintf(os.Stderr, "💥 %d meta-tiles are still missing, they are listed in %s\n", len(stillFailing), fileName)
+			fmt.Fprintf(os.Stderr, "   to fetch only them, run again with the same -config and -layer and: -retryFile %s\n", fileName)
+		}
+		os.Exit(1)
 	}
-
 	l.Info("🏁 All requested operations completed.")
 }
 
-func processZoomLevel(
-	zoomLevel int,
-	layerName string,
-	myGrid *wmts.Grid,
-	xMin, yMin, xMax, yMax float64,
-	metaTileSize int,
-	buffer int,
-	layerConfig wmts.LayerConfig,
-	basePath string,
-	client *http.Client,
-	numWorkers int,
-	verbose bool,
-	l golog.MyLogger,
-) {
+// zoomLevelTasks returns the meta-tile tasks covering the bbox at the given zoom level.
+func zoomLevelTasks(myGrid *wmts.Grid, zoomLevel int, xMin, yMin, xMax, yMax float64, metaTileSize int, l golog.MyLogger) []metaTileTask {
 	// Get tile boundaries
 	minCol, maxRow, err := myGrid.GetTile(xMin, yMin, zoomLevel)
 	if err != nil {
@@ -175,60 +258,140 @@ func processZoomLevel(
 	}
 	l.Info("ℹ️ minCol: %d, minRow: %d", minCol, minRow)
 	l.Info("ℹ️ maxCol: %d, maxRow: %d", maxCol, maxRow)
+	l.Info("ℹ️ totalTiles: %d, ", (maxCol-minCol+1)*(maxRow-minRow+1))
 
-	// Calculate total tiles
-	totalTiles := (maxCol - minCol + 1) * (maxRow - minRow + 1)
+	var tasks []metaTileTask
+	for row := minRow; row <= maxRow; row += metaTileSize {
+		for col := minCol; col <= maxCol; col += metaTileSize {
+			tasks = append(tasks, metaTileTask{zoomLevel: zoomLevel, startCol: col, startRow: row, size: metaTileSize})
+		}
+	}
+	return tasks
+}
 
-	// Initialize progress bar
-	bar := progressbar.Default(int64(totalTiles), fmt.Sprintf("Processing tiles for layer %s, zoom %d", layerName, zoomLevel))
+// processTasks runs all the tasks with the worker pool, then retries the failed ones
+// in a second pass with a single worker. It returns the meta-tiles that still failed.
+func (p *tileProcessor) processTasks(label string, tasks []metaTileTask) []metaTileTask {
+	totalTiles := 0
+	for _, t := range tasks {
+		totalTiles += t.size * t.size
+	}
+	bar := progressbar.Default(int64(totalTiles), label)
 
-	// Create a channel for tasks. The channel now holds metaTileTask.
-	tasks := make(chan metaTileTask, (totalTiles)/(metaTileSize*metaTileSize)+1)
-	var wg sync.WaitGroup
+	res := p.runPass(tasks, p.numWorkers, bar)
+	saved, skipped, failed := res.saved, res.skipped, res.failed
+	if len(failed) > 0 {
+		p.l.Warn("⚠️ %d meta-tiles failed, second pass with one worker in %s", len(failed), secondPassDelay)
+		time.Sleep(secondPassDelay)
+		res = p.runPass(failed, 1, bar)
+		saved += res.saved
+		failed = res.failed
+	}
+	// Exit keeps the real progress, Finish would show 100% even with missing tiles
+	_ = bar.Exit()
+	fmt.Printf("\n%s: %d meta-tiles saved, %d skipped (fresh), %d failed\n", label, saved, skipped, len(failed))
+	return failed
+}
 
-	// Channel to track completed tasks
-	done := make(chan struct{}, totalTiles)
+// runPass distributes the tasks to numWorkers goroutines and collects the results.
+func (p *tileProcessor) runPass(tasks []metaTileTask, numWorkers int, bar *progressbar.ProgressBar) passResult {
+	var (
+		res passResult
+		mu  sync.Mutex
+		wg  sync.WaitGroup
+	)
+	taskCh := make(chan metaTileTask)
 
-	// Start a worker pool. Each worker now processes a meta-tile.
 	for i := 0; i < numWorkers; i++ {
 		wg.Add(1)
 		go func(workerID int) {
 			defer wg.Done()
-			for task := range tasks {
-				err := myGrid.SaveTilesFromMetaTile(task.zoomLevel, task.startCol, task.startRow, metaTileSize, metaTileSize, buffer, layerConfig, basePath, client)
-				if err != nil {
-					l.Error("💥 Worker %d: SaveTilesFromMetaTile for zoom:%d, meta-tile at (row:%d, col:%d) failed: %v", workerID, task.zoomLevel, task.startRow, task.startCol, err)
-				} else {
-					if verbose {
-						l.Info("ℹ️ Worker %d: zoom:%d, meta-tile at (row:%d, col:%d) saved", workerID, task.zoomLevel, task.startRow, task.startCol)
-					}
-					// Signal completion for each tile in the meta-tile
-					for j := 0; j < metaTileSize*metaTileSize; j++ {
-						done <- struct{}{}
-					}
+			for task := range taskCh {
+				if p.skipExisting && p.grid.IsMetaTileFresh(task.zoomLevel, task.startCol, task.startRow, task.size, task.size, p.layerConfig, p.basePath, p.maxTileAge) {
+					mu.Lock()
+					res.skipped++
+					mu.Unlock()
+					_ = bar.Add(task.size * task.size)
+					continue
 				}
+				err := p.grid.SaveTilesFromMetaTile(task.zoomLevel, task.startCol, task.startRow, task.size, task.size, p.buffer, p.maxRetries, p.layerConfig, p.basePath, p.client)
+				if err != nil {
+					p.l.Error("💥 Worker %d: SaveTilesFromMetaTile for zoom:%d, meta-tile at (row:%d, col:%d) failed: %v", workerID, task.zoomLevel, task.startRow, task.startCol, err)
+					mu.Lock()
+					res.failed = append(res.failed, task)
+					mu.Unlock()
+					continue
+				}
+				if p.verbose {
+					p.l.Info("ℹ️ Worker %d: zoom:%d, meta-tile at (row:%d, col:%d) saved", workerID, task.zoomLevel, task.startRow, task.startCol)
+				}
+				mu.Lock()
+				res.saved++
+				mu.Unlock()
+				_ = bar.Add(task.size * task.size)
 			}
 		}(i)
 	}
-	// Start a goroutine to update the progress bar
-	go func() {
-		for range done {
-			bar.Add(1) // Increment progress bar
-		}
-	}()
 
-	// Enqueue meta-tile tasks
-	for row := minRow; row <= maxRow; row += metaTileSize {
-		for col := minCol; col <= maxCol; col += metaTileSize {
-			tasks <- metaTileTask{zoomLevel: zoomLevel, startCol: col, startRow: row}
+	for _, t := range tasks {
+		taskCh <- t
+	}
+	close(taskCh)
+	wg.Wait()
+	return res
+}
+
+// writeFailedFile saves the failed meta-tiles as csv, to be processed again later with -retryFile.
+func writeFailedFile(path, layerName string, tasks []metaTileTask) error {
+	return tools.WriteFileAtomic(path, func(w io.Writer) error {
+		if _, err := fmt.Fprintf(w, "# %s\n", failedFileHeader); err != nil {
+			return err
 		}
+		cw := csv.NewWriter(w)
+		for _, t := range tasks {
+			record := []string{layerName, strconv.Itoa(t.zoomLevel), strconv.Itoa(t.startCol), strconv.Itoa(t.startRow), strconv.Itoa(t.size)}
+			if err := cw.Write(record); err != nil {
+				return err
+			}
+		}
+		cw.Flush()
+		return cw.Error()
+	})
+}
+
+// readFailedFile loads the meta-tiles written by writeFailedFile and checks they belong to layerName.
+func readFailedFile(path, layerName string) ([]metaTileTask, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	cr := csv.NewReader(f)
+	cr.Comment = '#'
+	cr.FieldsPerRecord = 5
+	records, err := cr.ReadAll()
+	if err != nil {
+		return nil, fmt.Errorf("invalid content in %s: %w", path, err)
 	}
 
-	// Close the tasks channel and wait for workers to finish
-	close(tasks)
-	wg.Wait()
-	// Close done channel and wait for progress bar to finish
-	close(done)
-	bar.Finish()
-	l.Info("ℹ️ Zoom %d processed successfully", zoomLevel)
+	tasks := make([]metaTileTask, 0, len(records))
+	for i, r := range records {
+		if r[0] != layerName {
+			return nil, fmt.Errorf("%s record %d is for layer %q, not for -layer %q", path, i+1, r[0], layerName)
+		}
+		var values [4]int
+		for j, s := range r[1:] {
+			v, err := strconv.Atoi(s)
+			if err != nil || v < 0 {
+				return nil, fmt.Errorf("%s record %d: invalid value %q, expected %s", path, i+1, s, failedFileHeader)
+			}
+			values[j] = v
+		}
+		if values[3] < 1 {
+			return nil, fmt.Errorf("%s record %d: metaTileSize must be >= 1", path, i+1)
+		}
+		tasks = append(tasks, metaTileTask{zoomLevel: values[0], startCol: values[1], startRow: values[2], size: values[3]})
+	}
+	return tasks, nil
 }

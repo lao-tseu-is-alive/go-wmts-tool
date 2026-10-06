@@ -32,7 +32,7 @@ func GetStaticPageHandler(title string, description string, l golog.MyLogger) ht
 		TraceRequest(handlerName, r, l)
 		w.Header().Set(HeaderContentType, MIMEHtml)
 		w.WriteHeader(http.StatusOK)
-		n, err := fmt.Fprintf(w, getHtmlPage(title, description))
+		n, err := fmt.Fprint(w, getHtmlPage(title, description))
 		if err != nil {
 			l.Error("💥💥 ERROR: [%s]  was unable to Fprintf. path:'%s', from IP: [%s], send_bytes:%d\n", handlerName, r.URL.Path, r.RemoteAddr, n)
 			http.Error(w, "Internal server error. GetStaticPageHandler was unable to Fprintf", http.StatusInternalServerError)

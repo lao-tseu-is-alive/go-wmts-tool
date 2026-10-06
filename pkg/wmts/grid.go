@@ -1,14 +1,14 @@
 package wmts
 
 import (
+	"bytes"
 	"fmt"
 	"image"
-	"image/png"
+	_ "image/png" // registers the png decoder used by image.Decode
 	"math"
 	"net/http"
 	"os"
-	"path/filepath"
-	"sync"
+	"time"
 
 	"github.com/lao-tseu-is-alive/go-wmts-tool/pkg/golog"
 	"github.com/lao-tseu-is-alive/go-wmts-tool/pkg/imgTools"
@@ -39,14 +39,10 @@ type Grid struct {
 	// resolutions is a map of zoom levels to their properties.
 	resolutions map[int]Resolution
 	l           golog.MyLogger
-	// mutex probably not needed because Grid struct should be immutable after its initial creation but...
-	mu sync.RWMutex
 }
 
 // GetTile calculates the tile indices (col, row) for a given coordinate and zoom level.
 func (g *Grid) GetTile(coordX, coordY float64, zoomLevel int) (int, int, error) {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
 	if _, ok := g.resolutions[zoomLevel]; !ok {
 		return 0, 0, fmt.Errorf("unsupported zoom level: %d. Please choose between 0 and %d", zoomLevel, g.MaxZoom())
 	}
@@ -62,8 +58,6 @@ func (g *Grid) GetTile(coordX, coordY float64, zoomLevel int) (int, int, error) 
 
 // MaxZoom returns the maximum supported zoom level.
 func (g *Grid) MaxZoom() int {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
 	maxZoom := 0
 	for zoom := range g.resolutions {
 		if zoom > maxZoom {
@@ -75,15 +69,11 @@ func (g *Grid) MaxZoom() int {
 
 // NumZoomLevels returns the number of supported zoom levels.
 func (g *Grid) NumZoomLevels() int {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
 	return len(g.resolutions)
 }
 
 // MinZoom returns the minimum supported zoom level.
 func (g *Grid) MinZoom() int {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
 	minZoom := 0
 	first := true
 	for zoom := range g.resolutions {
@@ -100,8 +90,6 @@ func (g *Grid) MinZoom() int {
 
 // IsValidTile checks if the given tile indices are valid for the specified zoom level.
 func (g *Grid) IsValidTile(zoomLevel, tileCol, tileRow int) bool {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
 	if _, ok := g.resolutions[zoomLevel]; !ok {
 		return false
 	}
@@ -116,8 +104,6 @@ func (g *Grid) IsValidTile(zoomLevel, tileCol, tileRow int) bool {
 
 // GetTileBBox calculates the bounding box for a given tile.
 func (g *Grid) GetTileBBox(zoomLevel, tileCol, tileRow int) (*BBox, error) {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
 	if !g.IsValidTile(zoomLevel, tileCol, tileRow) {
 		maxCols := g.GetMaxNumCols(zoomLevel)
 		maxRows := g.GetMaxNumRows(zoomLevel)
@@ -151,43 +137,31 @@ func (g *Grid) GetTileBBox(zoomLevel, tileCol, tileRow int) (*BBox, error) {
 
 // GetBBox returns the bounding box of the entire grid.
 func (g *Grid) GetBBox() BBox {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
 	return g.Bbox
 }
 
 // GetTileWidth returns the width of a tile in meters.
 func (g *Grid) GetTileWidth() float64 {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
 	return g.TileSize * float64(g.MetersPerUnit)
 }
 
 // GetTileHeight returns the height of a tile in meters.
 func (g *Grid) GetTileHeight() float64 {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
 	return g.TileSize * float64(g.MetersPerUnit)
 }
 
 // GetHeight returns the total height of the grid in meters.
 func (g *Grid) GetHeight() float64 {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
 	return g.Bbox.YMax - g.Bbox.YMin
 }
 
 // GetWidth returns the total width of the grid in meters.
 func (g *Grid) GetWidth() float64 {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
 	return g.Bbox.XMax - g.Bbox.XMin
 }
 
 // GetMaxNumRows returns the maximum number of rows for a given zoom level.
 func (g *Grid) GetMaxNumRows(zoomLevel int) int {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
 	if _, ok := g.resolutions[zoomLevel]; !ok {
 		panic(fmt.Sprintf("Unsupported zoom level. Please choose between 0 and %d.", g.MaxZoom()))
 	}
@@ -204,8 +178,6 @@ func (g *Grid) GetMaxNumRows(zoomLevel int) int {
 
 // GetMaxNumCols returns the maximum number of columns for a given zoom level.
 func (g *Grid) GetMaxNumCols(zoomLevel int) int {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
 	if _, ok := g.resolutions[zoomLevel]; !ok {
 		panic(fmt.Sprintf("Unsupported zoom level. Please choose between 0 and %d.", g.MaxZoom()))
 	}
@@ -222,8 +194,6 @@ func (g *Grid) GetMaxNumCols(zoomLevel int) int {
 
 // SaveTileImage get the wms request for a given tile and save the png file in the local cache path
 func (g *Grid) SaveTileImage(zoomLevel, tileCol, tileRow, buffer int, lc LayerConfig, basePath string, client *http.Client) (string, error) {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
 	bbox, err := g.GetTileBBox(zoomLevel, tileCol, tileRow)
 	if err != nil {
 		errMsg := fmt.Sprintf("error in GetTileBBox  zoom:%d, col:%d, row:%d", zoomLevel, tileCol, tileRow)
@@ -232,8 +202,8 @@ func (g *Grid) SaveTileImage(zoomLevel, tileCol, tileRow, buffer int, lc LayerCo
 	layers := lc.WMSLayers
 	params := g.GetWMSParams(*bbox, layers, int(g.GetTileWidth()), int(g.GetTileHeight()), buffer, DefaultImageFormat) // Use GetTileWidth
 	wmsURL := fmt.Sprintf("%s?%s%s", g.WmsBackendUrl, g.WmsStartParams, tools.BuildQueryString(params))
-	imgPath := GetWmtsImgPath(basePath, lc.WMTSURLPrefix, lc.Name, lc.WMTSURLStyle, lc.WMTSDimensionYear, lc.WMTSMatrixSet, DefaultImageFormat, zoomLevel, tileRow, tileCol)
-	err = tools.GetPngFromUrl(client, wmsURL, imgPath, buffer, 2, g.l)
+	imgPath := lc.TileImgPath(basePath, zoomLevel, tileRow, tileCol)
+	err = tools.GetPngFromUrl(client, wmsURL, imgPath, buffer, tools.DefaultMaxRetries, g.l)
 	if err != nil {
 		errMsg := fmt.Sprintf("error in GetPngFromUrl tile  zoom:%d, col:%d, row:%d", zoomLevel, tileCol, tileRow)
 		return errMsg, err
@@ -243,8 +213,6 @@ func (g *Grid) SaveTileImage(zoomLevel, tileCol, tileRow, buffer int, lc LayerCo
 
 // GetTileWmsUrl returns the WMS URL for a given tile.
 func (g *Grid) GetTileWmsUrl(zoomLevel, tileCol, tileRow, buffer int, layers string) (string, error) {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
 	bbox, err := g.GetTileBBox(zoomLevel, tileCol, tileRow)
 	if err != nil {
 		return "", err
@@ -254,12 +222,25 @@ func (g *Grid) GetTileWmsUrl(zoomLevel, tileCol, tileRow, buffer int, layers str
 	return wmsURL, nil
 }
 
+// IsMetaTileFresh reports whether all the tiles of a meta-tile already exist in the local cache
+// and were all written less than maxAge ago. Older tiles are considered outdated.
+func (g *Grid) IsMetaTileFresh(zoomLevel, startCol, startRow, numCols, numRows int, lc LayerConfig, basePath string, maxAge time.Duration) bool {
+	for row := startRow; row < startRow+numRows; row++ {
+		for col := startCol; col < startCol+numCols; col++ {
+			info, err := os.Stat(lc.TileImgPath(basePath, zoomLevel, row, col))
+			if err != nil || time.Since(info.ModTime()) > maxAge {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 // SaveTilesFromMetaTile fetches a larger image (a "meta-tile") from the WMS server,
 // splits it into individual tiles, and saves them to the local cache.
 // This approach reduces the number of HTTP requests, improving performance.
-func (g *Grid) SaveTilesFromMetaTile(zoomLevel, startCol, startRow, numCols, numRows, buffer int, lc LayerConfig, basePath string, client *http.Client) error {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
+// Transient WMS failures are retried up to maxRetries times.
+func (g *Grid) SaveTilesFromMetaTile(zoomLevel, startCol, startRow, numCols, numRows, buffer, maxRetries int, lc LayerConfig, basePath string, client *http.Client) error {
 	// 1. Calculate the bounding box for the entire meta-tile.
 	// BBox of the top-left tile
 	topLeftBBox, err := g.GetTileBBox(zoomLevel, startCol, startRow)
@@ -287,18 +268,13 @@ func (g *Grid) SaveTilesFromMetaTile(zoomLevel, startCol, startRow, numCols, num
 	params := g.GetWMSParams(*metaBBox, lc.WMSLayers, metaTileWidth, metaTileHeight, buffer, DefaultImageFormat)
 	wmsURL := fmt.Sprintf("%s?%s%s", g.WmsBackendUrl, g.WmsStartParams, tools.BuildQueryString(params))
 
-	resp, err := client.Get(wmsURL)
+	body, err := tools.FetchImageWithRetry(client, wmsURL, maxRetries, g.l)
 	if err != nil {
-		return fmt.Errorf("WMS request for meta-tile failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("WMS request returned non-OK status: %d for url : [%s]", resp.StatusCode, wmsURL)
+		return err
 	}
 
 	// Decode the image from the response body.
-	bufferedImage, _, err := image.Decode(resp.Body)
+	bufferedImage, _, err := image.Decode(bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("failed to decode meta-tile image: %w", err)
 	}
@@ -316,23 +292,9 @@ func (g *Grid) SaveTilesFromMetaTile(zoomLevel, startCol, startRow, numCols, num
 	tileIndex := 0
 	for row := 0; row < numRows; row++ {
 		for col := 0; col < numCols; col++ {
-			tileRow := startRow + row
-			tileCol := startCol + col
-			imgPath := GetWmtsImgPath(basePath, lc.WMTSURLPrefix, lc.Name, lc.WMTSURLStyle, lc.WMTSDimensionYear, lc.WMTSMatrixSet, DefaultImageFormat, zoomLevel, tileRow, tileCol)
-
-			// Create directory if it doesn't exist
-			if err := os.MkdirAll(filepath.Dir(imgPath), os.ModePerm); err != nil {
-				return fmt.Errorf("failed to create directory for tile: %w", err)
-			}
-
-			outFile, err := os.Create(imgPath)
-			if err != nil {
-				return fmt.Errorf("failed to create tile image file: %w", err)
-			}
-			defer outFile.Close()
-
-			if err := png.Encode(outFile, tiles[tileIndex]); err != nil {
-				return fmt.Errorf("failed to encode tile image: %w", err)
+			imgPath := lc.TileImgPath(basePath, zoomLevel, startRow+row, startCol+col)
+			if err := tools.SavePng(imgPath, tiles[tileIndex]); err != nil {
+				return fmt.Errorf("failed to save tile image: %w", err)
 			}
 			tileIndex++
 		}

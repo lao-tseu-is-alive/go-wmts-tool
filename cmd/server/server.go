@@ -239,7 +239,7 @@ func getTileImageHandler(chGrid *wmts.Grid, layers map[string]wmts.LayerConfig, 
 		// 5. Build the WMS URL.
 		wmsURL := fmt.Sprintf("%s?%s%s", chGrid.WmsBackendUrl, chGrid.WmsStartParams, tools.BuildQueryString(params))
 
-		imgPath := wmts.GetWmtsImgPath(basePath, layerConfig.WMTSURLPrefix, layerConfig.Name, layerConfig.WMTSURLStyle, layerConfig.WMTSDimensionYear, layerConfig.WMTSMatrixSet, "png", zoom, row, col)
+		imgPath := layerConfig.TileImgPath(basePath, zoom, row, col)
 		// check if tile is in cache
 		_, err = os.Stat(imgPath)
 		if err != nil {
