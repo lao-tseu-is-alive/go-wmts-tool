@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/lao-tseu-is-alive/go-wmts-tool/pkg/golog"
@@ -155,10 +156,24 @@ func WriteFileAtomic(path string, write func(w io.Writer) error) error {
 	return nil
 }
 
+// encoderBufferPool lets png encodes reuse their buffers (about 1 MB of zlib state each),
+// it is safe for concurrent use by the workers.
+type encoderBufferPool struct{ pool sync.Pool }
+
+func (p *encoderBufferPool) Get() *png.EncoderBuffer {
+	b, _ := p.pool.Get().(*png.EncoderBuffer)
+	return b
+}
+
+func (p *encoderBufferPool) Put(b *png.EncoderBuffer) { p.pool.Put(b) }
+
+// pngEncoder is shared by all tile writes, allocating a new zlib writer for each tile dominated the CPU usage.
+var pngEncoder = &png.Encoder{BufferPool: &encoderBufferPool{}}
+
 // SavePng encodes img as png and saves it atomically at path.
 func SavePng(path string, img image.Image) error {
 	return WriteFileAtomic(path, func(w io.Writer) error {
-		return png.Encode(w, img)
+		return pngEncoder.Encode(w, img)
 	})
 }
 

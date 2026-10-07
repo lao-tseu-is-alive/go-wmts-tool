@@ -2,6 +2,7 @@ package tools
 
 import (
 	"bytes"
+	"fmt"
 	"image"
 	"image/png"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -137,5 +139,45 @@ func TestWriteFileAtomic(t *testing.T) {
 	entries, _ := os.ReadDir(filepath.Dir(path))
 	if len(entries) != 1 {
 		t.Errorf("temporary file left behind: %v", entries)
+	}
+}
+
+func TestSavePngConcurrent(t *testing.T) {
+	dir := t.TempDir()
+	src := image.NewNRGBA(image.Rect(0, 0, 64, 64))
+	for i := range src.Pix {
+		src.Pix[i] = uint8(i)
+	}
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			for j := 0; j < 10; j++ {
+				if err := SavePng(filepath.Join(dir, fmt.Sprintf("%d-%d.png", i, j)), src); err != nil {
+					t.Error(err)
+				}
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	entries, _ := os.ReadDir(dir)
+	if len(entries) != 80 {
+		t.Fatalf("got %d files, want 80", len(entries))
+	}
+	for _, e := range entries {
+		f, err := os.Open(filepath.Join(dir, e.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := png.Decode(f)
+		f.Close()
+		if err != nil {
+			t.Fatalf("%s: %v", e.Name(), err)
+		}
+		if !bytes.Equal(got.(*image.NRGBA).Pix, src.Pix) {
+			t.Fatalf("%s: pixels differ from the source image", e.Name())
+		}
 	}
 }
