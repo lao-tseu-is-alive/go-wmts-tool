@@ -32,6 +32,11 @@ the workflow is what builds the released binaries.
 
 - Reuse the existing helpers: `lc.TileImgPath(...)` for tile paths, `tools.FetchImageWithRetry` for WMS requests,
   `tools.SavePng` / `tools.WriteFileAtomic` to write tiles (temp file + rename, mode 0644 so the web server can read them).
+- Always write png through `tools.SavePng`, never `png.Encode` directly: it reuses the encoder buffers,
+  the main CPU cost of saveWmtsTiles before v0.7.0.
+- `imgTools.CropImage` returns a sub-image sharing the decoded pixels, so its bounds do **not** start at (0,0):
+  always use `img.Bounds().Min` when indexing. Do not convert to `image.RGBA` (premultiplied): it alters
+  semi-transparent pixels (`pkg/imgTools/png_test.go` checks the output pixel by pixel).
 - `wmts.Grid` is immutable after creation: no mutex needed.
 - In `main.go`, dereference flag pointers only after `flag.Parse()` (this bug silently ignored `-metatile` and `-buffer` before v0.6.0).
 - Validate every new CLI flag in `main.go` with an explicit `l.Fatal` message.
