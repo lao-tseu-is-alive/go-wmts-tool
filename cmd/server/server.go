@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"time"
 
 	"github.com/lao-tseu-is-alive/go-wmts-tool/pkg/config"
 	"github.com/lao-tseu-is-alive/go-wmts-tool/pkg/gohttp"
@@ -262,6 +261,13 @@ func getTileImageHandler(chGrid *wmts.Grid, layers map[string]wmts.LayerConfig, 
 			return
 		}
 		defer file.Close()
+		info, err := file.Stat()
+		if err != nil {
+			errMsg := fmt.Sprintf("error doing file.Stat(imgPath:%s)", imgPath)
+			l.Error(errMsg)
+			http.Error(w, errMsg, http.StatusInternalServerError)
+			return
+		}
 		// Using http.ServeContent to efficiently serve the file content.
 		// This function handles a number of important HTTP features automatically:
 		// - Caching: It supports `If-Modified-Since` and `If-None-Match` headers,
@@ -272,10 +278,10 @@ func getTileImageHandler(chGrid *wmts.Grid, layers map[string]wmts.LayerConfig, 
 		// - Content Headers: It sets the correct `Content-Type` and `Content-Length` headers
 		//   for the response.
 		//
-		// We pass a `time.Now()` as the `modtime` because the file is dynamically generated
-		// and we want to prevent clients from caching it for too long, as its content
-		// might change in the future.
-		http.ServeContent(w, r, filepath.Base(imgPath), time.Now(), file)
+		// Tiles can be regenerated at any time, so `no-cache` asks clients to revalidate before each use,
+		// and the real file modtime lets ServeContent answer `304 Not Modified` while the tile is unchanged.
+		w.Header().Set("Cache-Control", "no-cache")
+		http.ServeContent(w, r, filepath.Base(imgPath), info.ModTime(), file)
 
 	}
 }
