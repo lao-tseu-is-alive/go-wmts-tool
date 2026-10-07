@@ -222,7 +222,7 @@ func getTileImageHandler(chGrid *wmts.Grid, layers map[string]wmts.LayerConfig, 
 		// 4. check if tile exists
 		if chGrid.IsValidTile(zoom, col, row) == false {
 			errMsg := fmt.Sprintf("invalid tile request for zoom:%d, col:%d, row:%d", zoom, col, row)
-			l.Error(errMsg)
+			l.Error("%s", errMsg)
 			http.Error(w, errMsg, http.StatusBadRequest)
 			return
 		}
@@ -246,7 +246,7 @@ func getTileImageHandler(chGrid *wmts.Grid, layers map[string]wmts.LayerConfig, 
 			err = tools.GetPngFromUrl(client, wmsURL, imgPath, buffer, 2, l)
 			if err != nil {
 				errMsg := fmt.Sprintf("error in GetPngFromUrl tile  zoom:%d, col:%d, row:%d", zoom, col, row)
-				l.Error(errMsg)
+				l.Error("%s", errMsg)
 				http.Error(w, errMsg, http.StatusInternalServerError)
 				return
 			}
@@ -256,7 +256,7 @@ func getTileImageHandler(chGrid *wmts.Grid, layers map[string]wmts.LayerConfig, 
 		file, err := os.Open(imgPath)
 		if err != nil {
 			errMsg := fmt.Sprintf("error doing os.Open(imgPath:%s)", imgPath)
-			l.Error(errMsg)
+			l.Error("%s", errMsg)
 			http.Error(w, errMsg, http.StatusInternalServerError)
 			return
 		}
@@ -264,7 +264,7 @@ func getTileImageHandler(chGrid *wmts.Grid, layers map[string]wmts.LayerConfig, 
 		info, err := file.Stat()
 		if err != nil {
 			errMsg := fmt.Sprintf("error doing file.Stat(imgPath:%s)", imgPath)
-			l.Error(errMsg)
+			l.Error("%s", errMsg)
 			http.Error(w, errMsg, http.StatusInternalServerError)
 			return
 		}

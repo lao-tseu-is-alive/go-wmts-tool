@@ -18,8 +18,8 @@ go vet ./...
 go test ./...            # add -race when touching the worker pool
 ```
 
-Go version is pinned to 1.24.3 (`go.mod` and `.github/workflows/release.yml`): do not use newer APIs
-such as `sync.WaitGroup.Go` (1.25).
+Go version is 1.27.1: keep `go.mod` and `go-version` in `.github/workflows/release.yml` in sync,
+the workflow is what builds the released binaries.
 
 ## Layout
 

@@ -1,6 +1,6 @@
 module github.com/lao-tseu-is-alive/go-wmts-tool
 
-go 1.24.3
+go 1.27.1
 
 require (
 	github.com/rs/xid v1.6.0
