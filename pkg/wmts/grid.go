@@ -236,22 +236,29 @@ func (g *Grid) IsMetaTileFresh(zoomLevel, startCol, startRow, numCols, numRows i
 	return true
 }
 
+// MetaTileDesc returns a human-readable description of the tiles covered by a meta-tile,
+// used in logs so operators can check them (e.g. "zoom:9 rows 15432-15435 cols 9192-9195").
+func MetaTileDesc(zoomLevel, startCol, startRow, numCols, numRows int) string {
+	return fmt.Sprintf("zoom:%d rows %d-%d cols %d-%d", zoomLevel, startRow, startRow+numRows-1, startCol, startCol+numCols-1)
+}
+
 // SaveTilesFromMetaTile fetches a larger image (a "meta-tile") from the WMS server,
 // splits it into individual tiles, and saves them to the local cache.
 // This approach reduces the number of HTTP requests, improving performance.
 // Transient WMS failures are retried up to maxRetries times.
-func (g *Grid) SaveTilesFromMetaTile(zoomLevel, startCol, startRow, numCols, numRows, buffer, maxRetries int, lc LayerConfig, basePath string, client *http.Client) error {
+// It returns the number of png tiles actually written, also on error (some tiles may have been saved).
+func (g *Grid) SaveTilesFromMetaTile(zoomLevel, startCol, startRow, numCols, numRows, buffer, maxRetries int, lc LayerConfig, basePath string, client *http.Client) (int, error) {
 	// 1. Calculate the bounding box for the entire meta-tile.
 	// BBox of the top-left tile
 	topLeftBBox, err := g.GetTileBBox(zoomLevel, startCol, startRow)
 	if err != nil {
-		return fmt.Errorf("failed to get bounding box for top-left tile: %w", err)
+		return 0, fmt.Errorf("failed to get bounding box for top-left tile: %w", err)
 	}
 
 	// BBox of the bottom-right tile
 	bottomRightBBox, err := g.GetTileBBox(zoomLevel, startCol+numCols-1, startRow+numRows-1)
 	if err != nil {
-		return fmt.Errorf("failed to get bounding box for bottom-right tile: %w", err)
+		return 0, fmt.Errorf("failed to get bounding box for bottom-right tile: %w", err)
 	}
 
 	// The meta-tile's bounding box is the combination of the top-left and bottom-right tile BBoxes.
@@ -268,15 +275,15 @@ func (g *Grid) SaveTilesFromMetaTile(zoomLevel, startCol, startRow, numCols, num
 	params := g.GetWMSParams(*metaBBox, lc.WMSLayers, metaTileWidth, metaTileHeight, buffer, DefaultImageFormat)
 	wmsURL := fmt.Sprintf("%s?%s%s", g.WmsBackendUrl, g.WmsStartParams, tools.BuildQueryString(params))
 
-	body, err := tools.FetchImageWithRetry(client, wmsURL, maxRetries, g.l)
+	body, err := tools.FetchImageWithRetry(client, wmsURL, MetaTileDesc(zoomLevel, startCol, startRow, numCols, numRows), maxRetries, g.l)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	// Decode the image from the response body.
 	bufferedImage, _, err := image.Decode(bytes.NewReader(body))
 	if err != nil {
-		return fmt.Errorf("failed to decode meta-tile image: %w", err)
+		return 0, fmt.Errorf("failed to decode meta-tile image: %w", err)
 	}
 
 	// 3. Split the meta-tile image into individual tiles.
@@ -285,20 +292,20 @@ func (g *Grid) SaveTilesFromMetaTile(zoomLevel, startCol, startRow, numCols, num
 	img := imgTools.CropImage(bufferedImage, buffer, g.l)
 	tiles, err := imgTools.SplitImage(img, tileWidth, tileHeight)
 	if err != nil {
-		return fmt.Errorf("failed to split meta-tile image: %w", err)
+		return 0, fmt.Errorf("failed to split meta-tile image: %w", err)
 	}
 
 	// 4. Save each individual tile.
-	tileIndex := 0
+	written := 0
 	for row := 0; row < numRows; row++ {
 		for col := 0; col < numCols; col++ {
 			imgPath := lc.TileImgPath(basePath, zoomLevel, startRow+row, startCol+col)
-			if err := tools.SavePng(imgPath, tiles[tileIndex]); err != nil {
-				return fmt.Errorf("failed to save tile image: %w", err)
+			if err := tools.SavePng(imgPath, tiles[written]); err != nil {
+				return written, fmt.Errorf("failed to save tile image after writing %d/%d png: %w", written, numCols*numRows, err)
 			}
-			tileIndex++
+			written++
 		}
 	}
 
-	return nil
+	return written, nil
 }

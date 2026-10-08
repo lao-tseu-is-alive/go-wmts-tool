@@ -62,3 +62,21 @@ when nginx loses its connection to the upstream). The tool handles them in three
 Tiles are written atomically (temporary file then rename), so an interrupted run never leaves
 a truncated png. An interrupted or partially failed run can also simply be restarted with
 `-skipExisting`: the meta-tiles saved recently are skipped and only the missing or outdated ones are fetched.
+
+Each retry warning and each failure names the tiles of the meta-tile concerned
+(e.g. `zoom:9 rows 15432-15435 cols 9192-9195`). At the end of each zoom level, a summary gives
+the counts of meta-tiles and of png really written by this run, so there is no need to count the files:
+
+```
+Processing tiles for layer fonds_geo_osm_bdcad_gris, zoom 9: 1848 meta-tiles, 29568 png expected
+  saved   :   1846 meta-tiles,    29536 png written
+  skipped :      0 meta-tiles,        0 png fresh
+  failed  :      2 meta-tiles,       32 png missing
+💥 2 meta-tiles (32 png) are still missing:
+   zoom:9 rows 15432-15435 cols 9192-9195
+   zoom:9 rows 15436-15439 cols 9224-9227
+   they are listed in failed_fonds_geo_osm_bdcad_gris_20261008-100153.csv
+   to fetch only them, run again with the same -config and -layer and: -retryFile failed_fonds_geo_osm_bdcad_gris_20261008-100153.csv
+```
+
+The expected count covers whole meta-tiles, so it can be slightly larger than the bbox at its edges.

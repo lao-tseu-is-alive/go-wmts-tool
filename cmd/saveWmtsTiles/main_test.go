@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -44,5 +46,27 @@ func TestReadFailedFileRejectsInvalidContent(t *testing.T) {
 				t.Errorf("expected an error for %q", content)
 			}
 		})
+	}
+}
+
+func TestPrintSummary(t *testing.T) {
+	res := passResult{
+		saved:        10,
+		skipped:      3,
+		tilesWritten: 160,
+		tilesSkipped: 48,
+		failed:       []metaTileTask{{zoomLevel: 9, startCol: 9192, startRow: 15432, size: 4}},
+	}
+	var buf bytes.Buffer
+	printSummary(&buf, "zoom 9", 14, 224, res)
+	for _, want := range []string{
+		"zoom 9: 14 meta-tiles, 224 png expected",
+		"saved   :     10 meta-tiles,      160 png written",
+		"skipped :      3 meta-tiles,       48 png fresh",
+		"failed  :      1 meta-tiles,       16 png missing",
+	} {
+		if !strings.Contains(buf.String(), want) {
+			t.Errorf("summary does not contain %q:\n%s", want, buf.String())
+		}
 	}
 }

@@ -76,7 +76,7 @@ func TestFetchImageWithRetry(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			srv, calls := newFlakyServer(t, tt.contentType, tt.statuses...)
-			body, err := FetchImageWithRetry(srv.Client(), srv.URL, tt.maxRetries, newTestLogger(t))
+			body, err := FetchImageWithRetry(srv.Client(), srv.URL, "test tile", tt.maxRetries, newTestLogger(t))
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("got err %v, wantErr %v", err, tt.wantErr)
 			}

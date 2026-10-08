@@ -48,3 +48,11 @@ func TestIsMetaTileFresh(t *testing.T) {
 		t.Errorf("meta-tile with all tiles recent must be fresh")
 	}
 }
+
+func TestMetaTileDesc(t *testing.T) {
+	got := MetaTileDesc(9, 9192, 15432, 4, 4)
+	want := "zoom:9 rows 15432-15435 cols 9192-9195"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}

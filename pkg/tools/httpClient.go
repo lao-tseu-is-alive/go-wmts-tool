@@ -99,19 +99,20 @@ func fetchImageOnce(client *http.Client, url string) ([]byte, error) {
 
 // FetchImageWithRetry downloads the image at url, retrying up to maxRetries times
 // with exponential backoff on network errors and transient HTTP status codes.
+// desc identifies the requested tiles in the retry warnings (e.g. "zoom:9 rows 15432-15435 cols 9192-9195").
 // It returns the raw image bytes.
-func FetchImageWithRetry(client *http.Client, url string, maxRetries int, l golog.MyLogger) ([]byte, error) {
+func FetchImageWithRetry(client *http.Client, url, desc string, maxRetries int, l golog.MyLogger) ([]byte, error) {
 	var lastErr error
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		if attempt > 0 {
 			delay := backoffDelay(attempt)
-			l.Warn("⚠️ attempt %d/%d failed: %v, retrying in %s", attempt, maxRetries+1, lastErr, delay.Round(time.Millisecond))
+			l.Warn("⚠️ %s: attempt %d/%d failed: %v, retrying in %s", desc, attempt, maxRetries+1, lastErr, delay.Round(time.Millisecond))
 			time.Sleep(delay)
 		}
 		body, err := fetchImageOnce(client, url)
 		if err == nil {
 			if attempt > 0 {
-				l.Warn("✅ request succeeded after %d retries", attempt)
+				l.Warn("✅ %s: request succeeded after %d retries", desc, attempt)
 			}
 			return body, nil
 		}
@@ -180,7 +181,7 @@ func SavePng(path string, img image.Image) error {
 // GetPngFromUrl downloads a single tile with retry logic and saves it to a file in path parameter
 func GetPngFromUrl(client *http.Client, url, path string, buffer, maxRetries int, l golog.MyLogger) error {
 	l.Debug("GetPngFromUrl buffer: %d , url: %s", buffer, url)
-	body, err := FetchImageWithRetry(client, url, maxRetries, l)
+	body, err := FetchImageWithRetry(client, url, path, maxRetries, l)
 	if err != nil {
 		return err
 	}

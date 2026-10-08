@@ -38,6 +38,7 @@ const (
 	defaultMaxTileAge          = 24 * time.Hour   // with -skipExisting, tiles older than this are fetched again
 	secondPassDelay            = 15 * time.Second // pause before retrying failed meta-tiles, to let the WMS server recover
 	failedFileHeader           = "layer,zoom,startCol,startRow,metaTileSize"
+	maxFailedListed            = 20 // failed meta-tiles listed at the end, the complete list is in the failed file
 )
 
 // metaTileTask defines a task to process a meta-tile.
@@ -46,6 +47,25 @@ type metaTileTask struct {
 	startCol  int
 	startRow  int
 	size      int // number of tiles per side of the meta-tile
+}
+
+// numTiles returns the number of png tiles in the meta-tile.
+func (t metaTileTask) numTiles() int {
+	return t.size * t.size
+}
+
+// desc returns the zoom and tile ranges covered by the meta-tile, for the logs.
+func (t metaTileTask) desc() string {
+	return wmts.MetaTileDesc(t.zoomLevel, t.startCol, t.startRow, t.size, t.size)
+}
+
+// countTiles returns the total number of png tiles in tasks.
+func countTiles(tasks []metaTileTask) int {
+	n := 0
+	for _, t := range tasks {
+		n += t.numTiles()
+	}
+	return n
 }
 
 // tileProcessor holds everything needed by the workers to process meta-tile tasks.
@@ -65,9 +85,11 @@ type tileProcessor struct {
 
 // passResult summarizes one pass of the worker pool over a list of meta-tile tasks.
 type passResult struct {
-	saved   int
-	skipped int
-	failed  []metaTileTask
+	saved        int // meta-tiles
+	skipped      int // meta-tiles
+	tilesWritten int // png really written by the successful meta-tiles
+	tilesSkipped int // fresh png kept with -skipExisting
+	failed       []metaTileTask
 }
 
 func main() {
@@ -234,10 +256,18 @@ func main() {
 		if fileName == "" {
 			fileName = fmt.Sprintf("failed_%s_%s.csv", *layerName, time.Now().Format("20060102-150405"))
 		}
+		fmt.Fprintf(os.Stderr, "💥 %d meta-tiles (%d png) are still missing:\n", len(stillFailing), countTiles(stillFailing))
+		for i, t := range stillFailing {
+			if i == maxFailedListed {
+				fmt.Fprintf(os.Stderr, "   ... and %d more\n", len(stillFailing)-maxFailedListed)
+				break
+			}
+			fmt.Fprintf(os.Stderr, "   %s\n", t.desc())
+		}
 		if err := writeFailedFile(fileName, *layerName, stillFailing); err != nil {
 			l.Error("💥💥 cannot write the list of failed meta-tiles: %v", err)
 		} else {
-			fmt.Fprintf(os.Stderr, "💥 %d meta-tiles are still missing, they are listed in %s\n", len(stillFailing), fileName)
+			fmt.Fprintf(os.Stderr, "   they are listed in %s\n", fileName)
 			fmt.Fprintf(os.Stderr, "   to fetch only them, run again with the same -config and -layer and: -retryFile %s\n", fileName)
 		}
 		os.Exit(1)
@@ -272,25 +302,33 @@ func zoomLevelTasks(myGrid *wmts.Grid, zoomLevel int, xMin, yMin, xMax, yMax flo
 // processTasks runs all the tasks with the worker pool, then retries the failed ones
 // in a second pass with a single worker. It returns the meta-tiles that still failed.
 func (p *tileProcessor) processTasks(label string, tasks []metaTileTask) []metaTileTask {
-	totalTiles := 0
-	for _, t := range tasks {
-		totalTiles += t.size * t.size
-	}
+	totalTiles := countTiles(tasks)
 	bar := progressbar.Default(int64(totalTiles), label)
 
 	res := p.runPass(tasks, p.numWorkers, bar)
-	saved, skipped, failed := res.saved, res.skipped, res.failed
-	if len(failed) > 0 {
-		p.l.Warn("⚠️ %d meta-tiles failed, second pass with one worker in %s", len(failed), secondPassDelay)
+	if len(res.failed) > 0 {
+		p.l.Warn("⚠️ %d meta-tiles failed, second pass with one worker in %s", len(res.failed), secondPassDelay)
 		time.Sleep(secondPassDelay)
-		res = p.runPass(failed, 1, bar)
-		saved += res.saved
-		failed = res.failed
+		second := p.runPass(res.failed, 1, bar)
+		res.saved += second.saved
+		res.tilesWritten += second.tilesWritten
+		res.failed = second.failed
 	}
 	// Exit keeps the real progress, Finish would show 100% even with missing tiles
 	_ = bar.Exit()
-	fmt.Printf("\n%s: %d meta-tiles saved, %d skipped (fresh), %d failed\n", label, saved, skipped, len(failed))
-	return failed
+	printSummary(os.Stdout, label, len(tasks), totalTiles, res)
+	if accounted := res.tilesWritten + res.tilesSkipped + countTiles(res.failed); accounted != totalTiles {
+		p.l.Error("💥 %s: %d png expected but %d accounted for (written + fresh + missing)", label, totalTiles, accounted)
+	}
+	return res.failed
+}
+
+// printSummary writes the meta-tiles and png counts of a processed zoom level (or retry file).
+func printSummary(w io.Writer, label string, numMetaTiles, totalTiles int, res passResult) {
+	fmt.Fprintf(w, "\n%s: %d meta-tiles, %d png expected\n", label, numMetaTiles, totalTiles)
+	fmt.Fprintf(w, "  saved   : %6d meta-tiles, %8d png written\n", res.saved, res.tilesWritten)
+	fmt.Fprintf(w, "  skipped : %6d meta-tiles, %8d png fresh\n", res.skipped, res.tilesSkipped)
+	fmt.Fprintf(w, "  failed  : %6d meta-tiles, %8d png missing\n", len(res.failed), countTiles(res.failed))
 }
 
 // runPass distributes the tasks to numWorkers goroutines and collects the results.
@@ -310,25 +348,27 @@ func (p *tileProcessor) runPass(tasks []metaTileTask, numWorkers int, bar *progr
 				if p.skipExisting && p.grid.IsMetaTileFresh(task.zoomLevel, task.startCol, task.startRow, task.size, task.size, p.layerConfig, p.basePath, p.maxTileAge) {
 					mu.Lock()
 					res.skipped++
+					res.tilesSkipped += task.numTiles()
 					mu.Unlock()
-					_ = bar.Add(task.size * task.size)
+					_ = bar.Add(task.numTiles())
 					continue
 				}
-				err := p.grid.SaveTilesFromMetaTile(task.zoomLevel, task.startCol, task.startRow, task.size, task.size, p.buffer, p.maxRetries, p.layerConfig, p.basePath, p.client)
+				written, err := p.grid.SaveTilesFromMetaTile(task.zoomLevel, task.startCol, task.startRow, task.size, task.size, p.buffer, p.maxRetries, p.layerConfig, p.basePath, p.client)
 				if err != nil {
-					p.l.Error("💥 Worker %d: SaveTilesFromMetaTile for zoom:%d, meta-tile at (row:%d, col:%d) failed: %v", workerID, task.zoomLevel, task.startRow, task.startCol, err)
+					p.l.Error("💥 Worker %d: meta-tile %s failed: %v", workerID, task.desc(), err)
 					mu.Lock()
 					res.failed = append(res.failed, task)
 					mu.Unlock()
 					continue
 				}
 				if p.verbose {
-					p.l.Info("ℹ️ Worker %d: zoom:%d, meta-tile at (row:%d, col:%d) saved", workerID, task.zoomLevel, task.startRow, task.startCol)
+					p.l.Info("ℹ️ Worker %d: meta-tile %s saved", workerID, task.desc())
 				}
 				mu.Lock()
 				res.saved++
+				res.tilesWritten += written
 				mu.Unlock()
-				_ = bar.Add(task.size * task.size)
+				_ = bar.Add(task.numTiles())
 			}
 		}(i)
 	}
